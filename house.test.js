@@ -254,9 +254,9 @@ test('the sheet stays the same size whatever stands outside, so the drawing does
 
 test('the outside things and pets live in the link too, one letter each', () => {
   const house = { rooms: [...ROOMS], name: 'Ann', extras: ['rain barrel', 'cat'] };
-  assert.strictEqual(H.encode(house), 'rooms=lkdvbto&extras=rc&name=Ann');
+  assert.strictEqual(H.encode(house), 'rooms=lkdvbto&extras=rc&flip=1&name=Ann');
   assert.deepStrictEqual([...H.decode('#' + H.encode(house), font).extras], ['rain barrel', 'cat']);
-  assert.strictEqual(H.encode({ ...house, extras: [] }), 'rooms=lkdvbto&extras=&name=Ann');
+  assert.strictEqual(H.encode({ ...house, extras: [] }), 'rooms=lkdvbto&extras=&flip=1&name=Ann');
   assert.deepStrictEqual([...H.decode('#rooms=lkdvbto&extras=', font).extras], [], 'nothing outside');
   assert.deepStrictEqual([...H.decode('#rooms=lkdvbto&extras=cxcd', font).extras], ['cat', 'dog'], 'unknown letters and repeats drop out');
   assert.deepStrictEqual([...H.decode('#rooms=lkdvbto&extras=f', font).extras], ['fish']);
@@ -329,10 +329,10 @@ test('a name keeps only letters the pen can write: an accent it has not got drop
 test('the house lives in the link: one letter per room, ground floor first, then the name', () => {
   const house = { rooms: ['office', 'lab', 'lab', 'kitchen', 'bathroom', 'living', 'dining'], name: 'Andrea Antal', extras: ['heat pump', 'dog'] };
   const link = H.encode(house);
-  assert.strictEqual(link, 'rooms=ollktvd&extras=hd&name=Andrea+Antal');
+  assert.strictEqual(link, 'rooms=ollktvd&extras=hd&flip=1&name=Andrea+Antal');
   const back = H.decode('#' + link, font);
   assert.deepStrictEqual({ rooms: [...back.rooms], name: back.name, extras: [...back.extras] }, house);
-  assert.strictEqual(H.encode(HERS), 'rooms=lkdvbto&extras=h', 'no name, no name in the link');
+  assert.strictEqual(H.encode(HERS), 'rooms=lkdvbto&extras=h&flip=1', 'no name, no name in the link');
 });
 
 test('a link with no house, or a broken one, gives a random house', () => {
@@ -474,10 +474,10 @@ test('each window style draws its own windows, clear of the EV charger, the porc
 
 test('the roof and windows live in the link by name; the usual ones, a gable and classic windows, stay out of it', () => {
   const house = { ...HERS, roof: 'barn', windows: 'arched' };
-  assert.strictEqual(H.encode(house), 'rooms=lkdvbto&extras=h&roof=barn&windows=arched');
+  assert.strictEqual(H.encode(house), 'rooms=lkdvbto&extras=h&roof=barn&windows=arched&flip=1');
   const back = H.decode('#' + H.encode(house), font);
   assert.deepStrictEqual([back.roof, back.windows], ['barn', 'arched']);
-  assert.strictEqual(H.encode({ ...HERS, roof: 'gable', windows: 'classic' }), 'rooms=lkdvbto&extras=h');
+  assert.strictEqual(H.encode({ ...HERS, roof: 'gable', windows: 'classic' }), 'rooms=lkdvbto&extras=h&flip=1');
   const old = H.decode('#rooms=lkdvbto&extras=h', font);
   assert.deepStrictEqual([old.roof, old.windows], ['gable', 'classic'], 'a link from before');
   const bad = H.decode('#rooms=lkdvbto&extras=h&roof=igloo&windows=x', font);
@@ -486,30 +486,30 @@ test('the roof and windows live in the link by name; the usual ones, a gable and
   assert.ok(H.ROOF_STYLES.includes(random.roof) && H.WINDOW_STYLES.includes(random.windows), 'a random house');
 });
 
-// ---- Flip, ink and paper ----
+// ---- The mirror, ink and paper ----
 
-const flipped = drawing(font, { ...HERS, name: 'L', flip: true }), unflipped = drawing(font, { ...HERS, name: 'L' });
+const mirrored = drawing(font, { ...HERS, name: 'L', mirror: true }), plain = drawing(font, { ...HERS, name: 'L' });
 
-test('flipped, the door end is on the left: the same sheet, mirrored', () => {
-  near(flipped.w, unflipped.w, 'sheet width');
-  near(flipped.h, unflipped.h, 'sheet height');
-  const door = unflipped.at([HOUSE.W, HOUSE.D, 3]), flippedDoor = flipped.at([HOUSE.W, HOUSE.D, 3]);
-  assert.ok(door[0] > unflipped.w / 2 && flippedDoor[0] < flipped.w / 2, 'the door end swaps sides');
-  near(flippedDoor[0], flipped.w - door[0], 'mirrored across the middle');
-  assert.strictEqual(flipped.printed.length, unflipped.printed.length, 'the same lawn');
+test('mirrored, the door end is on the left: the same sheet', () => {
+  near(mirrored.w, plain.w, 'sheet width');
+  near(mirrored.h, plain.h, 'sheet height');
+  const door = plain.at([HOUSE.W, HOUSE.D, 3]), mirroredDoor = mirrored.at([HOUSE.W, HOUSE.D, 3]);
+  assert.ok(door[0] > plain.w / 2 && mirroredDoor[0] < mirrored.w / 2, 'the door end swaps sides');
+  near(mirroredDoor[0], mirrored.w - door[0], 'mirrored across the middle');
+  assert.strictEqual(mirrored.printed.length, plain.printed.length, 'the same lawn');
 });
 
-test('flipped, the sign still reads left to right', () => {
+test('mirrored, the sign still reads left to right', () => {
   // An L: the top of its stem is at its left, its foot runs right. Mirrored it would be the other way round.
-  for (const d of [unflipped, flipped]) {
+  for (const d of [plain, mirrored]) {
     const pts = d.printed.filter((s) => s.group === d.words[0].group).flatMap((s) => s.pts), xs = pts.map((p) => p[0]);
     const top = pts.reduce((a, b) => (b[1] < a[1] ? b : a)), [x0, x1] = [Math.min(...xs), Math.max(...xs)];
-    assert.ok(top[0] - x0 < (x1 - x0) / 2, `the L reads backwards ${d === flipped ? 'flipped' : 'unflipped'}`);
+    assert.ok(top[0] - x0 < (x1 - x0) / 2, `the L reads backwards ${d === mirrored ? 'mirrored' : 'plain'}`);
   }
 });
 
-test('flipped, the pens still sweep from left to right, so they start at the door', () => {
-  for (const pen of flipped.pens) {
+test('mirrored, the pens still sweep from left to right, so they start at the door', () => {
+  for (const pen of mirrored.pens) {
     const keys = pen.strokes.map((s) => Math.min(...s.pts.map((p) => p[0])));
     let later = Infinity;
     for (let k = keys.length - 1; k >= 0; k--) {
@@ -517,7 +517,7 @@ test('flipped, the pens still sweep from left to right, so they start at the doo
       later = Math.min(later, keys[k]);
     }
   }
-  near(H.timeline(flipped).total, 7, 'seconds', 0.2);
+  near(H.timeline(mirrored).total, 7, 'seconds', 0.2);
 });
 
 test('a player picks the ink and the paper; a blueprint always takes white ink', () => {
@@ -539,12 +539,15 @@ test('the download keeps the ink, the paper and its grid', () => {
 });
 
 test('the flip, ink and paper live in the link; the usual ones stay out of it', () => {
-  const house = { ...HERS, ink: 'red', paper: 'blueprint grid', flip: true };
+  // The usual house is mirrored, its door end on the left. The flip in the link turns it back.
+  const house = { ...HERS, ink: 'red', paper: 'blueprint grid', mirror: false };
   assert.strictEqual(H.encode(house), 'rooms=lkdvbto&extras=h&ink=red&paper=blueprint+grid&flip=1');
   const back = H.decode('#' + H.encode(house), font);
-  assert.deepStrictEqual([back.ink, back.paper, back.flip], ['red', 'blueprint grid', true]);
-  const old = H.decode('#rooms=lkdvbto&extras=h', font);
-  assert.deepStrictEqual([old.ink, old.paper, old.flip], ['blue', 'white', false], 'a link from before');
+  assert.deepStrictEqual([back.ink, back.paper, back.mirror], ['red', 'blueprint grid', false]);
+  const usual = H.decode('#rooms=lkdvbto&extras=h', font);
+  assert.deepStrictEqual([usual.ink, usual.paper, usual.mirror], ['blue', 'white', true], 'the usual ones');
+  assert.strictEqual(H.encode({ ...HERS, mirror: true }), 'rooms=lkdvbto&extras=h', 'mirrored is the usual');
+  assert.strictEqual(H.decode('', font).mirror, true, 'a random house is mirrored too');
   const bad = H.decode('#rooms=lkdvbto&ink=gold&paper=foil', font);
   assert.deepStrictEqual([bad.ink, bad.paper], ['blue', 'white'], 'unknown ones');
 });
@@ -572,4 +575,80 @@ test('the download is the finished drawing on paper: a path per stroke, and the 
   assert.strictEqual((out.match(/<path /g) || []).length, s.strokes.length);
   assert.ok(!out.includes('<b>') && !out.includes('&"'), 'the name is drawn, never written into the markup');
   assert.match(out, new RegExp(`width="${Math.round(s.w * 2)}"`), '2 px per sheet unit');
+});
+
+// ---- The spec table ----
+
+// The player's rows: a label and a value each, up to 4. A blank row drops out; the labels are in capitals.
+const SPECS = [['name', 'Ann'], ['', ''], ['location', 'Vancouver, Canada'], ['SCALE', '1:12']];
+const spec = drawing(font, { ...HERS, specs: SPECS });
+const boxOf = (strokes) => {
+  const xs = strokes.flatMap((s) => s.pts.map((p) => p[0])), ys = strokes.flatMap((s) => s.pts.map((p) => p[1]));
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+};
+
+test('a spec table is printed in the bottom-right corner, with the rows the player writes', () => {
+  assert.strictEqual(JSON.stringify(spec.spec.rows), JSON.stringify([['NAME', 'Ann'], ['LOCATION', 'Vancouver, Canada'], ['SCALE', '1:12']]));
+  assert.ok(spec.spec.strokes.length > 0, 'the table is drawn');
+  for (const s of spec.spec.strokes) assert.ok(spec.printed.includes(s), 'the table is printed with the first view');
+  const [, , x1, y1] = boxOf(spec.spec.strokes);
+  assert.ok(x1 > 0.9 * spec.w && y1 > 0.9 * spec.h, 'bottom right');
+  assert.ok(spec.spec.size * ((320 - 32) / (spec.w + 2 * BED)) >= 12, 'at least 12px on a 320px phone');
+});
+
+test('with no specs, or only blank rows, there is no table and the sheet keeps its size', () => {
+  for (const specs of [undefined, null, [], [['', ''], ['  ', '']]]) {
+    const d = drawing(font, { ...HERS, specs });
+    assert.strictEqual(d.spec, null, JSON.stringify(specs));
+    assert.strictEqual(d.h, sh.h, 'the same sheet');
+  }
+});
+
+test('the table grows the sheet under the lawn: the house stays where it was, and clear of the table', () => {
+  assert.strictEqual(spec.w, sh.w, 'the same width');
+  assert.ok(spec.h > sh.h, 'a taller sheet');
+  const house = spec.strokes.filter((s) => !spec.spec.strokes.includes(s));
+  assert.deepStrictEqual(house.map((s) => s.pts), sh.strokes.map((s) => s.pts), 'the same house');
+  const [x0, y0] = boxOf(spec.spec.strokes);
+  for (const s of house) for (const [x, y] of s.pts) assert.ok(x < x0 - 10 || y < y0 - 10, `house line at ${x.toFixed(0)},${y.toFixed(0)}`);
+});
+
+test('mirrored, the table stays in the bottom-right corner and reads left to right', () => {
+  const m = drawing(font, { ...HERS, specs: SPECS, mirror: true });
+  assert.deepStrictEqual(m.spec.strokes.map((s) => s.pts), spec.spec.strokes.map((s) => s.pts));
+});
+
+test('a row too long for the sheet makes the table smaller, so it stays on the paper', () => {
+  const d = drawing(font, { ...HERS, specs: [['W'.repeat(20), 'W'.repeat(20)]] });
+  const [x0, , x1] = boxOf(d.spec.strokes);
+  assert.ok(x0 >= 28 - 1e-6 && x1 <= d.w - 28 + 1e-6, `the table spans ${x0.toFixed(0)} to ${x1.toFixed(0)} of ${d.w.toFixed(0)}`);
+  assert.ok(d.spec.size < H.SPEC_SIZE, 'smaller');
+});
+
+test('the spec table takes as little of the screen as it can: the smallest size whose text makes 12px', () => {
+  const house = { ...HERS, specs: SPECS };
+  const px = (size, W, Hh) => {
+    const d = drawing(font, house, size);
+    return d.spec.size * Math.min(W / (d.w + 2 * BED), Hh / (d.h + 2 * BED));
+  };
+  for (const W of [320, 360, 375, 393, 430]) {
+    const size = H.specFor(font, house, W - 32, 700);
+    assert.ok(px(size, W - 32, 700) >= 12, `${W}px: ${px(size, W - 32, 700).toFixed(1)}px`);
+    assert.ok(size === H.SPEC_SMALL || px(size - 1, W - 32, 700) < 12, `${W}px: ${size - 1} would make 12px too`);
+  }
+  assert.strictEqual(H.specFor(font, house, 1440 - 32, 900 - 32 - 52), H.SPEC_SMALL, 'a laptop takes the small size');
+  assert.ok(px(H.SPEC_SMALL, 1440 - 32, 900 - 32 - 52) >= 12, 'still 12px on a laptop');
+  const small = drawing(font, house, H.SPEC_SMALL);
+  assert.strictEqual(small.strokes.length - small.spec.strokes.length, sh.strokes.length, 'the same house at any size');
+});
+
+test('the specs live in the link, cleaned like a name; with none the link has none', () => {
+  const house = { ...HERS, mirror: true, specs: [['NAME', 'Ann'], ['', ''], ['SCALE', '1:12']] };
+  const back = H.decode('#' + H.encode(house), font);
+  assert.strictEqual(JSON.stringify(back.specs), JSON.stringify([['NAME', 'Ann'], ['SCALE', '1:12']]));
+  assert.ok(!H.encode({ ...HERS, mirror: true }).includes('specs'), 'no specs, nothing in the link');
+  assert.strictEqual(H.decode('#rooms=lkdvbto', font).specs, null, 'no specs');
+  assert.strictEqual(JSON.stringify(H.decode('#rooms=lkdvbto&specs=', font).specs), '[]', 'specs on, every row blank');
+  const typed = new URLSearchParams({ rooms: 'lkdvbto', specs: 'Zoë 🏠\tVancouver\nA\tB\nC\tD\nE\tF\nG\tH' }).toString();
+  assert.strictEqual(JSON.stringify(H.decode('#' + typed, font).specs), JSON.stringify([['Zoe', 'Vancouver'], ['A', 'B'], ['C', 'D'], ['E', 'F']]), 'cleaned, 4 rows at most');
 });

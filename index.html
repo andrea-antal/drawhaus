@@ -3,7 +3,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>drawhaus</title>
 <style>
-  /* Layout: white paper on a plain desk, the controls under it. The lawn is printed; the pens draw the house. */
+  /* Layout: white paper on a plain desk, the buttons over it. The lawn is printed; the pens draw the house. */
   :root {
     --bed: #d3d8df;
     --shadow: rgba(10, 20, 40, 0.16);
@@ -30,12 +30,12 @@
     box-sizing: border-box;
     background: var(--bed);
     color: var(--ctl);
-    font: 14px/1.4 var(--ui);
+    font: 12px/1.4 var(--ui);
     padding-left: max(16px, env(safe-area-inset-left, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
     padding-block: 16px;
   }
-  main { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  main { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); gap: 12px; }
   #drawing { display: block; width: 100%; height: 100%; min-width: 0; }
 
   .paper { fill: var(--paper); }
@@ -46,83 +46,115 @@
     stroke-linecap: round; stroke-linejoin: round;
   }
 
-  /* The controls: the name, the rooms laid out like the house (upstairs over the ground floor), then the buttons. */
-  .controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; }
-  .controls > * { min-width: 0; }
-  .name { display: flex; align-items: center; gap: 8px; }
-  .rooms { flex: 0 1 460px; display: grid; gap: 6px; }
-  .floor { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
-  .buttons { display: flex; gap: 8px; }
-  /* What stands outside, and the pets: one toggle each, in a group with its name before it. */
-  .groups { display: grid; gap: 6px; }
-  .extras { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .extras > span { width: 4em; } /* one width for both names, so the toggles line up */
-  .extras label {
-    display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 8px;
-    background: var(--ctl-bg); border: 1px solid var(--ctl-line); border-radius: 18px; cursor: pointer;
-  }
-  .extras label:has(:checked) { border-color: var(--ink); }
-  .extras input { margin: 0; accent-color: var(--ink); }
-  .extras select { width: auto; height: 36px; padding-left: 10px; padding-right: 22px; background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%; }
-  .extras label:has(:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
-  button, select, #name {
-    box-sizing: border-box; height: 40px; font: 14px/1 var(--ui);
+  /* The buttons: one row over the drawing, Options on the left, the rest on the right. */
+  .bar { display: flex; gap: 6px; }
+  #shuffle { margin-left: auto; }
+  button {
+    box-sizing: border-box; height: 40px; min-width: 40px; padding: 0 10px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: 600 12px/1 var(--ui);
     color: var(--ctl); background: var(--ctl-bg); border: 1px solid var(--ctl-line); border-radius: 6px;
   }
-  #name { width: 12em; padding: 0 10px; }
-  /* A slim arrow, so "bathroom" fits a quarter of a phone's width. */
-  select {
-    width: 100%; min-width: 0; padding: 0 14px 0 5px; appearance: none;
-    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
-    background-position: calc(100% - 9px) 50%, calc(100% - 5px) 50%; background-size: 4px 4px; background-repeat: no-repeat;
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* The options: a receipt on thermal paper (in both themes), torn at the bottom. It feeds out of a slot under
+     the buttons: it slides down while everything above the slot is clipped away. */
+  #controls {
+    --slip: #fbfaf6; --slip-ink: #2b2b2b; --slip-line: #a19d94; --slot: 60px;
+    inset: var(--slot) auto auto max(16px, env(safe-area-inset-left, 0px)); margin: 0; padding: 0; border: 0;
+    width: min(340px, calc(100vw - 32px)); overflow: visible; background: none; color: var(--slip-ink); color-scheme: light;
+    filter: drop-shadow(0 6px 8px var(--shadow));
+    translate: 0 -100%; clip-path: inset(100% -24px -24px);
+    transition: translate 0.6s, clip-path 0.6s, display 0.6s allow-discrete, overlay 0.6s allow-discrete;
+    transition-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
   }
-  @media (max-width: 420px) { select { font-size: 13px; } }
-  /* On a wide screen the controls stand in a column beside the drawing, so the drawing keeps the height. */
-  @media (min-width: 900px) and (min-aspect-ratio: 5/4) {
-    main { grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: minmax(0, 1fr); }
-    .controls { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: center; overflow-y: auto; }
-    .rooms { flex: none; }
+  #controls:popover-open { translate: 0; clip-path: inset(0 -24px -24px); }
+  @starting-style { #controls:popover-open { translate: 0 -100%; clip-path: inset(100% -24px -24px); } }
+  @media (prefers-reduced-motion: reduce) { #controls { transition: none; } }
+  .slip {
+    box-sizing: border-box; max-height: calc(100dvh - var(--slot) - 16px); overflow-y: auto;
+    scrollbar-width: none; /* a long receipt scrolls without a bar, so it keeps its width */
+    padding: 4px 14px 18px; background: var(--slip);
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 10px 100%;
   }
-  button {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    min-width: 44px; padding: 0 12px; font-weight: 600; cursor: pointer;
+  /* A section: its name on the left, its lines on the right, a dashed rule over it. The rooms sit under their
+     name, laid out like the house (upstairs over the ground floor). */
+  .sec { display: grid; grid-template-columns: 6em minmax(0, 1fr); column-gap: 8px; padding: 8px 0; border-top: 1px dashed var(--slip-line); }
+  .sec:first-child, .sec[hidden] + .sec { border-top: 0; }
+  .sec[hidden] { display: none; }
+  .sec > :not(span) { grid-column: 2; }
+  .sec > span { font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; line-height: 24px; }
+  .floor { grid-column: 1 / -1 !important; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; margin-top: 4px; }
+  /* A line: its name, a dotted leader, then its value or its box. */
+  .sec > label { display: flex; align-items: center; gap: 4px; min-height: 24px; cursor: pointer; }
+  .sec > label::after { content: ''; flex: 1; order: 1; position: relative; top: 4px; border-bottom: 1px dotted var(--slip-line); }
+  .sec > label > * { order: 2; }
+  .slip :is(input, select) { box-sizing: border-box; margin: 0; font: inherit; color: inherit; accent-color: var(--slip-ink); }
+  /* The specs: a label and a value a row, each a blank to fill in, like the name. */
+  .spec-rows { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: 2px 6px; }
+  .spec-rows[hidden] { display: none; }
+  .spec-rows .label { text-transform: uppercase; }
+  #name, #words, .spec-rows input { width: 100%; height: 24px; padding: 0 2px; background: none; border: 0; border-bottom: 1px solid var(--slip-ink); border-radius: 0; }
+  .slip select {
+    height: 24px; padding: 0 12px 0 2px; appearance: none; border: 0; border-radius: 2px; cursor: pointer;
+    background: linear-gradient(45deg, transparent 50%, currentColor 50%) calc(100% - 6px) 50% / 4px 4px no-repeat,
+                linear-gradient(135deg, currentColor 50%, transparent 50%) calc(100% - 2px) 50% / 4px 4px no-repeat;
   }
-  :is(button, select, #name):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .sec > label > select { field-sizing: content; text-align-last: right; } /* the value hugs the right edge */
+  .mirror .floor { direction: rtl; }
+  .floor select { direction: ltr; width: 100%; min-width: 0; height: 28px; padding-left: 5px; border: 1px solid var(--slip-line); }
+  .slip select:disabled { opacity: 0.4; cursor: default; }
+  .slip button { justify-self: end; height: 28px; margin-top: 6px; color: var(--slip); background: var(--slip-ink); border: 0; border-radius: 2px; }
+  .slip :is(input, select):focus-visible { outline: 2px solid var(--slip-ink); outline-offset: 1px; }
 </style>
 
 <main>
+  <div class="bar">
+    <button type="button" popovertarget="controls">Options</button>
+    <button id="shuffle" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h3.5c4 0 6 10 10 10H21"/><path d="M3 17h3.5c4 0 6-10 10-10H21"/><path d="M18 4l3 3-3 3"/><path d="M18 14l3 3-3 3"/></svg>Shuffle
+    </button>
+    <button id="replay" type="button" aria-label="Replay the drawing">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>
+    </button>
+    <button id="share" type="button">Share</button>
+    <button id="download" type="button">Download</button>
+  </div>
   <svg id="drawing" role="img" aria-label="A two-storey house with its front cut away, drawn in blue ballpoint"></svg>
-  <form class="controls" id="controls">
-    <label class="name">Name <input id="name" maxlength="20" autocomplete="off" spellcheck="false"></label>
-    <div class="rooms">
-      <div class="floor" id="upstairs"></div>
-      <div class="floor" id="ground"></div>
-    </div>
-    <div class="groups">
-      <div class="extras" role="group" aria-labelledby="style-label">
-        <span id="style-label">Style</span><select id="roof" aria-label="Roof"></select><select id="windows" aria-label="Windows"></select>
-      </div>
-      <div class="extras" role="group" aria-labelledby="look-label">
-        <span id="look-label">Look</span><select id="paper" aria-label="Paper"></select><select id="ink" aria-label="Ink"></select>
-        <label><input type="checkbox" id="flip">flip</label>
-      </div>
-      <div class="extras" id="outside" role="group" aria-labelledby="outside-label"><span id="outside-label">Outside</span></div>
-      <div class="extras" id="pets" role="group" aria-labelledby="pets-label"><span id="pets-label">Pets</span></div>
-      <div class="extras" id="attic" role="group" aria-labelledby="attic-label"><span id="attic-label">Attic</span></div>
-    </div>
-    <div class="buttons">
-      <button id="shuffle" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h3.5c4 0 6 10 10 10H21"/><path d="M3 17h3.5c4 0 6-10 10-10H21"/><path d="M18 4l3 3-3 3"/><path d="M18 14l3 3-3 3"/></svg>Shuffle
-      </button>
-      <button id="replay" type="button" aria-label="Replay the drawing">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>
-      </button>
-      <button id="share" type="button">Share</button>
-      <button id="download" type="button">Download</button>
-    </div>
-  </form>
 </main>
+<form id="controls" popover>
+  <div class="slip">
+    <div class="sec" id="ask" role="group" aria-labelledby="ask-label" hidden>
+      <span id="ask-label">Describe</span>
+      <input id="words" maxlength="200" autocomplete="off" aria-labelledby="ask-label">
+      <button type="button" id="draw">Draw</button>
+      <output id="ask-note"></output>
+    </div>
+    <label class="sec"><span>Name</span><input id="name" maxlength="20" autocomplete="off" spellcheck="false"></label>
+    <div class="sec" role="group" aria-labelledby="rooms-label">
+      <span id="rooms-label">Rooms</span><div class="floor" id="upstairs"></div><div class="floor" id="ground"></div>
+    </div>
+    <div class="sec" role="group" aria-labelledby="style-label">
+      <span id="style-label">Style</span>
+      <label>roof<select id="roof"></select></label>
+      <label>windows<select id="windows"></select></label>
+    </div>
+    <div class="sec" role="group" aria-labelledby="look-label">
+      <span id="look-label">Look</span>
+      <label>paper<select id="paper"></select></label>
+      <label>ink<select id="ink"></select></label>
+      <label>flip<input type="checkbox" id="flip"></label>
+    </div>
+    <div class="sec" id="outside" role="group" aria-labelledby="outside-label"><span id="outside-label">Outside</span></div>
+    <div class="sec" id="pets" role="group" aria-labelledby="pets-label"><span id="pets-label">Pets</span></div>
+    <div class="sec" id="attic" role="group" aria-labelledby="attic-label"><span id="attic-label">Attic</span></div>
+    <div class="sec" role="group" aria-labelledby="specs-label">
+      <span id="specs-label">Specs</span>
+      <label>table<input type="checkbox" id="specs"></label>
+      <div class="spec-rows" id="spec-rows"></div>
+    </div>
+  </div>
+</form>
 
 <script src="glyphs.js"></script>
 <script id="house">
@@ -130,6 +162,9 @@
   const BED = 12; // margin round the paper for its shadow, in sheet units
   const U = 14; // sheet units per foot
   const M = 28; // paper margin
+  // The spec table: its text size in sheet units (SPEC_SIZE makes 12px on a 320px phone; a bigger screen takes a smaller one,
+  // down to SPEC_SMALL), Plotline's cap height in em, the most rows a player writes, and the space between it and the lawn.
+  const SPEC_SIZE = 32, SPEC_SMALL = 16, CAP = 0.7, SPEC_ROWS = 4, GAP = 24;
   const WAVE = 2 * U; // the pens sweep each room from the door end in bands this wide, in sheet units
   const EPS = 1e-4; // a face hides a line only when it is this far in front, in feet
   // Stages: the lawn, printed at once; the rooms by slot, ground floor then upstairs, left to right; then the attic.
@@ -527,15 +562,17 @@
   // The house lives in the link, after the #, so it never reaches a server: #rooms=lkdvbto&extras=hc&roof=barn&name=Andrea.
   // One letter per room, ground floor first, left to right; one per thing outside; the roof and windows by name, unless
   // they are the usual gable and classic. A link with no house, or a broken one, gives a random house. A link from before
-  // the outside things keeps the heat pump it had.
-  function encode({ rooms, name, extras = [], roof = 'gable', windows = 'classic', ink = 'blue', paper = 'white', flip = false }) {
+  // the outside things keeps the heat pump it had. The usual house is mirrored, its door end on the left; flip=1 turns it back.
+  // The specs: one row a line, its label and value split by a tab. A typed name can hold neither.
+  function encode({ rooms, name, extras = [], roof = 'gable', windows = 'classic', ink = 'blue', paper = 'white', mirror = false, specs = null }) {
     const q = new URLSearchParams({ rooms: rooms.map((r) => CODES[ROOMS.indexOf(r)]).join('') });
     q.set('extras', extras.map((x) => EXTRA_CODES[EXTRAS.indexOf(x)]).join(''));
     if (roof !== 'gable') q.set('roof', roof);
     if (windows !== 'classic') q.set('windows', windows);
     if (ink !== 'blue') q.set('ink', ink);
     if (paper !== 'white') q.set('paper', paper);
-    if (flip) q.set('flip', '1');
+    if (!mirror) q.set('flip', '1');
+    if (specs) q.set('specs', specs.filter(([l, v]) => (l + v).trim()).map((r) => r.join('\t')).join('\n'));
     if (name) q.set('name', name);
     return q.toString();
   }
@@ -549,7 +586,11 @@
       windows: WINDOW_STYLES.includes(q.get('windows')) ? q.get('windows') : ok ? 'classic' : randomOf(WINDOW_STYLES),
       ink: INKS.includes(q.get('ink')) ? q.get('ink') : 'blue',
       paper: PAPERS.includes(q.get('paper')) ? q.get('paper') : 'white',
-      flip: q.get('flip') === '1',
+      mirror: q.get('flip') !== '1',
+      specs: q.has('specs') ? q.get('specs').split('\n').map((r) => {
+        const [l = '', v = ''] = r.split('\t');
+        return [cleanName(l, font), cleanName(v, font)];
+      }).filter(([l, v]) => l || v).slice(0, SPEC_ROWS) : null,
       name: cleanName(q.get('name') || '', font),
     };
   }
@@ -971,8 +1012,8 @@
     on('y', SGY + 0.1, rect2(SGX - half + 0.12, 1.17, SGX + half - 0.12, 2.38));
     // Centre the letters on the board: they span 0.04 to 0.69 em above the baseline.
     const base = 1.775 - 0.365 * EM;
-    next(); // the letters: back to front when the sheet is flipped, so they read left to right once it is mirrored
-    const letter = house.flip ? (a) => SGX + word.width / 2 - a : (a) => SGX - word.width / 2 + a;
+    next(); // the letters: back to front when the sheet is mirrored, so they read left to right
+    const letter = house.mirror ? (a) => SGX + word.width / 2 - a : (a) => SGX - word.width / 2 + a;
     for (const st of word.strokes) on('y', SGY + 0.1, st.map(([a, b]) => [letter(a), base - b]));
     words.push({ str: sign, size: EM * U, group });
     next(); // tufts of grass
@@ -1319,14 +1360,18 @@
     return { faces, items, words };
   }
 
-  // The whole sheet: hidden lines removed, scaled onto the paper, and the pens' order set.
-  function drawing(font, house) {
+  // The house on its sheet: hidden lines removed, scaled onto the paper, and the pens' order set. It keeps the last house,
+  // so a new spec table, or a new size of it for the screen, does not remove the hidden lines again.
+  let made = {};
+  function sheetOf(font, house) {
+    const key = JSON.stringify({ ...house, specs: null });
+    if (made.font === font && made.key === key) return made;
     const sc = scene(font, house);
     const raw = hide(sc.faces, sc.items);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const s of raw) for (const [x, y] of s.pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-    // Flipped, the sheet is mirrored left to right: the door end comes first.
-    const tx = ([x, y]) => [(house.flip ? x1 - x : x - x0) * U + M, (y - y0) * U + M];
+    // Mirrored, the sheet turns left to right: the door end comes first.
+    const tx = ([x, y]) => [(house.mirror ? x1 - x : x - x0) * U + M, (y - y0) * U + M];
     const w = (x1 - x0) * U + 2 * M, h = (y1 - y0) * U + 2 * M;
     const all = raw.map((s) => ({ ...s, pts: s.pts.map(tx) }));
 
@@ -1336,7 +1381,7 @@
     const printed = all.filter((s) => s.stage === 0);
     const pens = PENS.map(({ name, stages, start }) => {
       const strokes = [];
-      let pos = tx(iso(house.flip ? [W + T, start[1], start[2]] : start)); // the end the pens start from
+      let pos = tx(iso(house.mirror ? [W + T, start[1], start[2]] : start)); // the end the pens start from
       const pieces = all.filter((v) => stages.includes(v.stage))
         .flatMap((s) => chop(s.pts, WAVE).map((pts) => ({ stage: s.stage, pts, key: -Math.min(...pts.map((q) => q[0])) })))
         .sort((a, b) => b.key - a.key);
@@ -1358,8 +1403,46 @@
       }
       return { name, stages, strokes };
     });
-    const strokes = [...printed, ...pens.flatMap((p) => p.strokes)];
-    return { w, h, printed, strokes, pens, words: sc.words, at: (p) => tx(iso(p)) };
+    return (made = { font, key, w, h, printed, pens, words: sc.words, at: (p) => tx(iso(p)) });
+  }
+
+  // The spec table in the bottom-right corner, like the ruled table on a blueprint: the rows the player writes, a label in
+  // capitals and a value each, printed with the first view. The sheet grows under the lawn to hold it. A row too wide for
+  // the sheet makes the whole table smaller. h0: the sheet's height without it.
+  function specTable(font, specs, w, h0, size) {
+    const rows = (specs || []).map(([l, v]) => [cleanName(l.toUpperCase(), font), cleanName(v, font)]).filter(([l, v]) => l || v);
+    if (!rows.length) return null;
+    const em = (t) => text(t, font, 0, 0, 1).width + 0.8; // a cell's width in em, with its padding
+    const lw = Math.max(...rows.map((r) => em(r[0]))), vw = Math.max(...rows.map((r) => em(r[1])));
+    size = Math.min(size, (w - 2 * M) / (lw + vw));
+    const ROW = 1.3 * size, PAD = 0.4 * size, SH = rows.length * ROW, h = h0 + GAP + SH;
+    const sx0 = w - M - (lw + vw) * size, sx1 = w - M, col = sx0 + lw * size, sy = h - M - SH;
+    const say = (t, x, i) => text(t, font, x, sy + i * ROW + (ROW + CAP * size) / 2, size).strokes.map((pts) => ({ stage: 0, pts }));
+    const strokes = [
+      { stage: 0, pts: rect2(sx0, sy, sx1, sy + SH) },
+      ...rows.slice(1).map((_, i) => ({ stage: 0, pts: [[sx0, sy + (i + 1) * ROW], [sx1, sy + (i + 1) * ROW]] })),
+      { stage: 0, pts: [[col, sy], [col, sy + SH]] },
+      ...rows.flatMap(([l, v], i) => [...say(l, sx0 + PAD, i), ...say(v, col + PAD, i)]),
+    ];
+    return { rows, size, h, strokes };
+  }
+
+  // The whole sheet: the house, and the spec table under it with its text `size` sheet units tall.
+  function drawing(font, house, size = SPEC_SIZE) {
+    const { w, h, printed, pens, words, at } = sheetOf(font, house), spec = specTable(font, house.specs, w, h, size);
+    const all = spec ? [...printed, ...spec.strokes] : printed;
+    return { w, h: spec ? spec.h : h, printed: all, strokes: [...all, ...pens.flatMap((p) => p.strokes)], pens, words, at, spec };
+  }
+
+  // The spec table's size on a screen width × height px: the smallest whole size from SPEC_SMALL whose text makes 12px,
+  // so a phone keeps as much of the house as it can.
+  function specFor(font, house, width, height) {
+    let size = SPEC_SMALL;
+    for (; size < SPEC_SIZE; size++) {
+      const d = drawing(font, house, size);
+      if (!d.spec || d.spec.size * Math.min(width / (d.w + 2 * BED), height / (d.h + 2 * BED)) >= 12) break;
+    }
+    return size;
   }
 
   // Pen timing: the pen speed in sheet units a second before it is tuned, the beat on the lawn before the pens start, and
@@ -1394,7 +1477,7 @@
   }
 
   const api = { BED, STAGES, ROOMS, SLOTS, KIT, WAVE, HOUSE: { W, D, GABLE, DOOR: SIDE_DOOR, ceiling }, iso, box, prism, hide, text,
-    plan, at, scene, drawing, timeline, svg, cleanName, shuffle, encode, decode, OUTSIDE, PETS, ATTIC, EXTRAS, randomExtras,
+    plan, at, scene, drawing, specFor, SPEC_SIZE, SPEC_SMALL, SPEC_ROWS, timeline, svg, cleanName, shuffle, encode, decode, OUTSIDE, PETS, ATTIC, EXTRAS, randomExtras,
     ROOF_STYLES, WINDOW_STYLES, roofOf, randomOf, INKS, PAPERS, GRID, look };
   if (typeof module !== 'undefined') module.exports = api; else root.House = api;
 })(this);
@@ -1406,7 +1489,7 @@
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const B = House.BED;
   let house = House.decode(location.hash, PLOTLINE);
-  let sh, pens, total, t = 0, playing = false, last = 0, VW = 1, VH = 1;
+  let sh, pens, total, t = 0, playing = false, last = 0, VW = 1, VH = 1, size = House.SPEC_SIZE;
 
   const el = (tag, attrs, parent) => {
     const e = document.createElementNS(NS, tag);
@@ -1417,10 +1500,9 @@
   const toD = (s) => 'M' + s.pts.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join('L');
   const hide = (path) => { path.style.strokeDashoffset = path.len + 5; };
 
-  // A room picker per slot, laid out like the house: upstairs over the ground floor.
+  // A room picker per slot, laid out like the house: upstairs over the ground floor, turned round with the mirror.
   const selects = House.SLOTS.map((s, i) => {
     const sel = document.createElement('select');
-    sel.setAttribute('aria-label', `${i < 4 ? 'Ground floor' : 'Upstairs'}, room ${i < 4 ? i + 1 : i - 3} from the left`);
     document.getElementById(i < 4 ? 'ground' : 'upstairs').append(sel);
     for (const r of House.ROOMS) sel.add(new Option(r, r));
     sel.addEventListener('change', () => { house.rooms[i] = sel.value; build(true); });
@@ -1429,17 +1511,17 @@
 
   // The roof and the windows: one style each. A new roof redraws the house; new windows only the end wall.
   const roofSel = document.getElementById('roof'), windowSel = document.getElementById('windows');
-  for (const r of House.ROOF_STYLES) roofSel.add(new Option(`${r} roof`, r));
-  for (const w of House.WINDOW_STYLES) windowSel.add(new Option(w === 'shutters' ? 'shutters' : `${w} windows`, w));
+  for (const r of House.ROOF_STYLES) roofSel.add(new Option(r));
+  for (const w of House.WINDOW_STYLES) windowSel.add(new Option(w));
   roofSel.addEventListener('change', () => { house.roof = roofSel.value; build(true); });
 
-  // The look: paper, ink, and the flip that puts the door end on the left. The pens start over only for the flip.
+  // The look: paper, ink, and the flip that puts the door end on the right. The pens start over only for the flip.
   const paperSel = document.getElementById('paper'), inkSel = document.getElementById('ink'), flipBox = document.getElementById('flip');
-  for (const p of House.PAPERS) paperSel.add(new Option(p === 'white' || p === 'grid' ? `${p} paper` : p, p));
-  for (const k of House.INKS) inkSel.add(new Option(`${k} ink`, k));
+  for (const p of House.PAPERS) paperSel.add(new Option(p));
+  for (const k of House.INKS) inkSel.add(new Option(k));
   paperSel.addEventListener('change', () => { house.paper = paperSel.value; build(false); });
   inkSel.addEventListener('change', () => { house.ink = inkSel.value; build(false); });
-  flipBox.addEventListener('change', () => { house.flip = flipBox.checked; build(true); });
+  flipBox.addEventListener('change', () => { house.mirror = !flipBox.checked; build(true); });
   windowSel.addEventListener('change', () => { house.windows = windowSel.value; build(false); });
 
   // A toggle for each thing outside and each pet, in its group.
@@ -1452,20 +1534,58 @@
     return box;
   });
 
+  // The specs: a toggle for the table, and its rows, a label and a value each. Turned on with every row blank, the rows
+  // start as her homepage's: the name from the sign, and a dollhouse's scale.
+  const specsBox = document.getElementById('specs'), specRows = document.getElementById('spec-rows');
+  const readSpecs = () => specInputs.map(([l, v]) => [l.value, v.value]);
+  const specInputs = Array.from({ length: House.SPEC_ROWS }, (_, i) => ['label', 'value'].map((part) => {
+    const input = Object.assign(document.createElement('input'), { className: part, maxLength: 20, autocomplete: 'off', spellcheck: false });
+    input.setAttribute('aria-label', `Spec ${i + 1}, ${part}`);
+    input.addEventListener('input', () => { house.specs = readSpecs(); build(false); });
+    specRows.append(input);
+    return input;
+  }));
+  specsBox.addEventListener('change', () => {
+    if (specsBox.checked && readSpecs().every(([l, v]) => !(l + v).trim())) {
+      [['NAME', house.name], ['LOCATION', ''], ['MODEL', ''], ['SCALE', '1:12']].forEach(([l, v], i) => {
+        [specInputs[i][0].value, specInputs[i][1].value] = [l, v];
+      });
+    }
+    house.specs = specsBox.checked ? readSpecs() : null;
+    build(false);
+  });
+  // The smallest spec table whose text makes 12px on this screen.
+  function specSize() {
+    const r = svg.getBoundingClientRect();
+    return House.specFor(PLOTLINE, house, r.width, r.height);
+  }
+
   // Draw the house afresh. The pens start over when the rooms change; a new name or a thing outside only adds to it.
   function build(restart) {
-    sh = House.drawing(PLOTLINE, house);
+    size = specSize();
+    sh = House.drawing(PLOTLINE, house, size);
     history.replaceState(null, '', '#' + House.encode(house));
-    selects.forEach((sel, i) => { sel.value = house.rooms[i]; });
+    selects.forEach((sel, i) => {
+      const [n, of] = i < 4 ? [i, 4] : [i - 4, 3]; // its place on its floor, and how many rooms the floor has
+      sel.value = house.rooms[i];
+      sel.setAttribute('aria-label', `${i < 4 ? 'Ground floor' : 'Upstairs'}, room ${house.mirror ? of - n : n + 1} from the left`);
+    });
+    document.getElementById('controls').classList.toggle('mirror', house.mirror);
     extras.forEach((box, k) => { box.checked = house.extras.includes(House.EXTRAS[k]); });
-    [roofSel.value, windowSel.value, paperSel.value, inkSel.value, flipBox.checked] = [house.roof, house.windows, house.paper, house.ink, house.flip];
+    [roofSel.value, windowSel.value, paperSel.value, inkSel.value, flipBox.checked] = [house.roof, house.windows, house.paper, house.ink, !house.mirror];
     inkSel.disabled = house.paper.startsWith('blueprint'); // a blueprint always takes white ink
     if (document.activeElement !== nameInput) nameInput.value = house.name;
+    specRows.hidden = !house.specs;
+    specsBox.checked = !!house.specs;
+    if (house.specs) specInputs.forEach((pair, i) => pair.forEach((input, k) => {
+      if (input !== document.activeElement) input.value = house.specs[i]?.[k] ?? '';
+    }));
     const floors = (a, b) => house.rooms.slice(a, b).join(', ');
     const list = (xs) => xs.filter((x) => house.extras.includes(x)).join(', ') || 'none';
     svg.setAttribute('aria-label', `A two-storey house with its front cut away, drawn ${house.paper.startsWith('blueprint') ? 'in white on a blueprint' : `in ${house.ink} ballpoint`}` +
-      `${house.flip ? ', its door end on the left' : ''}: a ${house.roof} roof, ${house.windows} windows. Upstairs: ${floors(4, 7)}. ` +
-      `Ground floor: ${floors(0, 4)}. Outside: ${list(House.OUTSIDE)}. Pets: ${list(House.PETS)}. Attic: ${list(House.ATTIC)}. The sign says ${sh.words[0].str}.`);
+      `, its door end on the ${house.mirror ? 'left' : 'right'}: a ${house.roof} roof, ${house.windows} windows. Upstairs: ${floors(4, 7)}. ` +
+      `Ground floor: ${floors(0, 4)}. Outside: ${list(House.OUTSIDE)}. Pets: ${list(House.PETS)}. Attic: ${list(House.ATTIC)}. The sign says ${sh.words[0].str}.` +
+      (sh.spec ? ` The spec table: ${sh.spec.rows.map((r) => r.filter(Boolean).join(' ')).join(', ')}.` : ''));
 
     VW = sh.w + 2 * B;
     VH = sh.h + 2 * B;
@@ -1551,6 +1671,29 @@
     build(true);
   });
 
+  // Describe: the player's words go to Claude (api/drawhaus.mjs), which picks the rooms, roof, windows and extras from these
+  // parts, like a shuffle that listens. It is off: with DESCRIBE on, the field shows where the site has a key (README).
+  const DESCRIBE = false;
+  const ask = document.getElementById('ask'), words = document.getElementById('words'), drawBtn = document.getElementById('draw');
+  const askNote = document.getElementById('ask-note');
+  if (DESCRIBE) fetch('/api/drawhaus').then((r) => { ask.hidden = !r.ok; }, () => {});
+  words.addEventListener('keydown', (e) => { if (e.key === 'Enter') drawBtn.click(); });
+  drawBtn.addEventListener('click', async () => {
+    if (!words.value.trim() || drawBtn.disabled) return;
+    [drawBtn.disabled, drawBtn.textContent, askNote.value] = [true, 'Drawing…', ''];
+    try {
+      const r = await fetch('/api/drawhaus', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ words: words.value }) });
+      if (!r.ok) throw r.status;
+      Object.assign(house, await r.json());
+      build(true);
+      document.getElementById('controls').hidePopover(); // so the player watches the pen
+    } catch (status) {
+      askNote.value = status === 422 ? 'Could not draw that. Try other words.' : 'Drawing is off for now. Try again later.';
+    } finally {
+      [drawBtn.disabled, drawBtn.textContent] = [false, 'Draw'];
+    }
+  });
+
   // Share: the link holds the house. The share sheet where there is one, else the link is copied.
   const shareBtn = document.getElementById('share');
   shareBtn.addEventListener('click', async () => {
@@ -1582,9 +1725,10 @@
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(House.svg(sh, 2, house));
   });
 
-  // A thin ballpoint line, about 1.15px on any screen.
+  // A thin ballpoint line, about 1.15px on any screen, and the spec table redrawn when its size for the screen changes.
   new ResizeObserver(() => {
     const r = svg.getBoundingClientRect();
+    if (r.width && specSize() !== size) build(false);
     if (r.width) svg.style.setProperty('--pen', (1.15 / Math.min(r.width / VW, r.height / VH)).toFixed(3));
   }).observe(svg);
   build(true);
