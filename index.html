@@ -1,0 +1,1591 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drawhaus</title>
+<style>
+  /* Layout: white paper on a plain desk, the controls under it. The lawn is printed; the pens draw the house. */
+  :root {
+    --bed: #d3d8df;
+    --shadow: rgba(10, 20, 40, 0.16);
+    --paper: #fdfdfb;
+    --ink: #22439a;
+    --ctl: #262b32;
+    --ctl-bg: #eceff3;
+    --ctl-line: #b2bac5;
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bed: #1a1d22; --shadow: rgba(0, 0, 0, 0.45);
+      --ctl: #e3e7ec; --ctl-bg: #262a31; --ctl-line: #444c57; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bed: #1a1d22; --shadow: rgba(0, 0, 0, 0.45);
+    --ctl: #e3e7ec; --ctl-bg: #262a31; --ctl-line: #444c57; color-scheme: dark;
+  }
+
+  html, body { height: 100%; margin: 0; }
+  body {
+    box-sizing: border-box;
+    background: var(--bed);
+    color: var(--ctl);
+    font: 14px/1.4 var(--ui);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 16px;
+  }
+  main { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  #drawing { display: block; width: 100%; height: 100%; min-width: 0; }
+
+  .paper { fill: var(--paper); }
+  .paper-shadow { fill: var(--shadow); }
+  .grid { fill: none; stroke-width: calc(var(--pen, 1.4) * 0.5); }
+  .ink {
+    fill: none; stroke: var(--ink); stroke-opacity: 0.88; stroke-width: var(--pen, 1.4);
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  /* The controls: the name, the rooms laid out like the house (upstairs over the ground floor), then the buttons. */
+  .controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; }
+  .controls > * { min-width: 0; }
+  .name { display: flex; align-items: center; gap: 8px; }
+  .rooms { flex: 0 1 460px; display: grid; gap: 6px; }
+  .floor { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+  .buttons { display: flex; gap: 8px; }
+  /* What stands outside, and the pets: one toggle each, in a group with its name before it. */
+  .groups { display: grid; gap: 6px; }
+  .extras { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .extras > span { width: 4em; } /* one width for both names, so the toggles line up */
+  .extras label {
+    display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 8px;
+    background: var(--ctl-bg); border: 1px solid var(--ctl-line); border-radius: 18px; cursor: pointer;
+  }
+  .extras label:has(:checked) { border-color: var(--ink); }
+  .extras input { margin: 0; accent-color: var(--ink); }
+  .extras select { width: auto; height: 36px; padding-left: 10px; padding-right: 22px; background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%; }
+  .extras label:has(:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+  button, select, #name {
+    box-sizing: border-box; height: 40px; font: 14px/1 var(--ui);
+    color: var(--ctl); background: var(--ctl-bg); border: 1px solid var(--ctl-line); border-radius: 6px;
+  }
+  #name { width: 12em; padding: 0 10px; }
+  /* A slim arrow, so "bathroom" fits a quarter of a phone's width. */
+  select {
+    width: 100%; min-width: 0; padding: 0 14px 0 5px; appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 9px) 50%, calc(100% - 5px) 50%; background-size: 4px 4px; background-repeat: no-repeat;
+  }
+  @media (max-width: 420px) { select { font-size: 13px; } }
+  /* On a wide screen the controls stand in a column beside the drawing, so the drawing keeps the height. */
+  @media (min-width: 900px) and (min-aspect-ratio: 5/4) {
+    main { grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: minmax(0, 1fr); }
+    .controls { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: center; overflow-y: auto; }
+    .rooms { flex: none; }
+  }
+  button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-width: 44px; padding: 0 12px; font-weight: 600; cursor: pointer;
+  }
+  :is(button, select, #name):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+
+<main>
+  <svg id="drawing" role="img" aria-label="A two-storey house with its front cut away, drawn in blue ballpoint"></svg>
+  <form class="controls" id="controls">
+    <label class="name">Name <input id="name" maxlength="20" autocomplete="off" spellcheck="false"></label>
+    <div class="rooms">
+      <div class="floor" id="upstairs"></div>
+      <div class="floor" id="ground"></div>
+    </div>
+    <div class="groups">
+      <div class="extras" role="group" aria-labelledby="style-label">
+        <span id="style-label">Style</span><select id="roof" aria-label="Roof"></select><select id="windows" aria-label="Windows"></select>
+      </div>
+      <div class="extras" role="group" aria-labelledby="look-label">
+        <span id="look-label">Look</span><select id="paper" aria-label="Paper"></select><select id="ink" aria-label="Ink"></select>
+        <label><input type="checkbox" id="flip">flip</label>
+      </div>
+      <div class="extras" id="outside" role="group" aria-labelledby="outside-label"><span id="outside-label">Outside</span></div>
+      <div class="extras" id="pets" role="group" aria-labelledby="pets-label"><span id="pets-label">Pets</span></div>
+      <div class="extras" id="attic" role="group" aria-labelledby="attic-label"><span id="attic-label">Attic</span></div>
+    </div>
+    <div class="buttons">
+      <button id="shuffle" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h3.5c4 0 6 10 10 10H21"/><path d="M3 17h3.5c4 0 6-10 10-10H21"/><path d="M18 4l3 3-3 3"/><path d="M18 14l3 3-3 3"/></svg>Shuffle
+      </button>
+      <button id="replay" type="button" aria-label="Replay the drawing">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>
+      </button>
+      <button id="share" type="button">Share</button>
+      <button id="download" type="button">Download</button>
+    </div>
+  </form>
+</main>
+
+<script src="glyphs.js"></script>
+<script id="house">
+(function (root) {
+  const BED = 12; // margin round the paper for its shadow, in sheet units
+  const U = 14; // sheet units per foot
+  const M = 28; // paper margin
+  const WAVE = 2 * U; // the pens sweep each room from the door end in bands this wide, in sheet units
+  const EPS = 1e-4; // a face hides a line only when it is this far in front, in feet
+  // Stages: the lawn, printed at once; the rooms by slot, ground floor then upstairs, left to right; then the attic.
+  const STAGES = ['first view', 'ground floor 1', 'ground floor 2', 'ground floor 3', 'ground floor 4', 'upstairs 1', 'upstairs 2',
+    'upstairs 3', 'attic'];
+
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+  // The camera: parallel lines of sight from the front right corner, turned TURN from the end wall and looking
+  // down at DOWN (45° and 35.26° is isometric). x runs right and down, y left and down, z up.
+  // Every point on one line of sight has the same screen point; its depth, the dot product with VIEW, grows toward the viewer.
+  const TURN = Math.PI / 4, DOWN = (20 * Math.PI) / 180;
+  const SCR = Math.sqrt(1.5); // screen units per foot, across the line of sight
+  const VIEW = [Math.cos(DOWN) * Math.cos(TURN), Math.cos(DOWN) * Math.sin(TURN), Math.sin(DOWN)].map((v) => v * Math.sqrt(3));
+  const RIGHT = [Math.sin(TURN), -Math.cos(TURN), 0].map((v) => v * SCR);
+  const DOWNWARD = [Math.sin(DOWN) * Math.cos(TURN), Math.sin(DOWN) * Math.sin(TURN), -Math.cos(DOWN)].map((v) => v * SCR);
+  const UP = -DOWNWARD[2]; // screen units per foot up
+  const iso = (p) => [dot(p, RIGHT), dot(p, DOWNWARD)];
+  // The 3D point at screen point q and depth d. Outlines drawn flat on the screen use it to take part in hiding.
+  const unIso = ([sx, sy], d) => [0, 1, 2].map((i) => (sx * RIGHT[i] + sy * DOWNWARD[i]) / (SCR * SCR) + (d * VIEW[i]) / 3);
+  // How far an ellipsoid with these semi-axes reaches toward the viewer from its centre, in depth.
+  const reach = (a) => Math.hypot(a[0] * VIEW[0], a[1] * VIEW[1], a[2] * VIEW[2]);
+  const lerp = (a, b, u) => a.map((v, i) => v + (b[i] - v) * u);
+  const mean = (ps) => [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
+  const key = (p) => p.map((v) => Math.round(v * 1e5)).join(',');
+  const area = (q) => q.reduce((s, p, i) => { const r = q[(i + 1) % q.length]; return s + p[0] * r[1] - r[0] * p[1]; }, 0) / 2;
+
+  function newell(pts) {
+    let x = 0, y = 0, z = 0;
+    pts.forEach((a, i) => {
+      const b = pts[(i + 1) % pts.length];
+      x += (a[1] - b[1]) * (a[2] + b[2]);
+      y += (a[2] - b[2]) * (a[0] + b[0]);
+      z += (a[0] - b[0]) * (a[1] + b[1]);
+    });
+    const l = Math.hypot(x, y, z);
+    return l > 1e-12 ? [x / l, y / l, z / l] : null;
+  }
+
+  // Faces of a convex solid, normals turned away from its centre. fv > 0 means the face looks at the viewer.
+  function solid(polys, meta = {}) {
+    const c = mean(polys.flat());
+    const faces = [];
+    for (const raw of polys) {
+      const pts = raw.filter((p, i) => key(p) !== key(raw[(i + 1) % raw.length]));
+      const n0 = pts.length > 2 && newell(pts);
+      if (!n0) continue;
+      const n = dot(n0, mean(pts)) < dot(n0, c) ? n0.map((v) => -v) : n0;
+      faces.push({
+        pts, n, k: dot(n, pts[0]), fv: dot(n, VIEW),
+        stage: meta.stage || 0, group: meta.group || 0, kit: meta.kit, tag: meta.tag, ink: meta.ink !== false, see: !!meta.see, join: !!meta.join,
+      });
+    }
+    return faces;
+  }
+
+  // Map 2D points in a plane to 3D: the plane x = a takes (y, z), y = a takes (x, z), z = a takes (x, y).
+  const AXES = { x: (a, [u, v]) => [a, u, v], y: (a, [u, v]) => [u, a, v], z: (a, [u, v]) => [u, v, a] };
+
+  function prism(axis, poly, a0, a1, meta) {
+    const at = AXES[axis], c0 = poly.map((p) => at(a0, p)), c1 = poly.map((p) => at(a1, p));
+    const sides = poly.map((_, i) => { const j = (i + 1) % poly.length; return [c0[i], c0[j], c1[j], c1[i]]; });
+    return solid([c0, c1, ...sides], meta);
+  }
+  const box = (x0, y0, z0, x1, y1, z1, meta) => prism('z', [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], z0, z1, meta);
+
+  // Points on a circle in a 2D plane, from angle a0 to a1. Horizontal circles start on the left silhouette.
+  const arc2 = (cu, cv, r, a0 = 0, a1 = a0 + 2 * Math.PI, n = 32) =>
+    Array.from({ length: n + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / n; return [cu + r * Math.cos(a), cv + r * Math.sin(a)]; });
+  const rect2 = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1], [u0, v0]];
+  const SIL = Math.atan2(VIEW[1], VIEW[0]) - Math.PI / 2; // a horizontal circle's silhouettes are at SIL and SIL + 180°
+
+  // Gear outline: n trapezoid teeth between radii ri and ro.
+  function gear2(cu, cv, ro, ri, n, ph = 0) {
+    const pts = [], w = Math.PI / n, at = (r, a) => [cu + r * Math.cos(a), cv + r * Math.sin(a)];
+    for (let i = 0; i < n; i++) {
+      const a = ph + 2 * w * i;
+      pts.push(at(ri, a - w / 2), at(ro, a - w / 4), at(ro, a + w / 4), at(ri, a + w / 2));
+    }
+    return [...pts, pts[0]];
+  }
+
+  // Outer tangent lines of two circles, as for a belt round two pulleys.
+  function belt([u1, v1], r1, [u2, v2], r2) {
+    const phi = Math.atan2(v2 - v1, u2 - u1), b = Math.acos((r1 - r2) / Math.hypot(u2 - u1, v2 - v1));
+    return [phi + b, phi - b].map((a) => [[u1 + r1 * Math.cos(a), v1 + r1 * Math.sin(a)], [u2 + r2 * Math.cos(a), v2 + r2 * Math.sin(a)]]);
+  }
+
+  // Convex hull of tagged 2D points (monotone chain), in order round the hull.
+  function hull(pts) {
+    const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const half = (list) => {
+      const h = [];
+      for (const q of list) {
+        while (h.length > 1 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop();
+        h.push(q);
+      }
+      h.pop();
+      return h;
+    };
+    return [...half(p), ...half(p.reverse())];
+  }
+
+  // An edge is a seam, not a line, where two coplanar faces meet on it and no other face on it shows there
+  // (a face pressed against another solid is hidden, so it does not count). Across stages a seam stays, so
+  // each stage is drawn closed, unless the faces are joined (a floor or roof the pen draws in parts).
+  const flush = (f, g) => dot(f.n, g.n) > 1 - 1e-9 && Math.abs(f.k - g.k) < 1e-6;
+  function seam(e, occ) {
+    const fs = e.faces;
+    const pair = fs.find((f, i) => fs.some((g, j) => j > i && flush(f, g) && (f.stage === g.stage || (f.join && g.join))));
+    if (!pair) return false;
+    const m = lerp(e.pts[0], e.pts[1], 0.5);
+    return fs.every((f) => {
+      if (flush(f, pair)) return true;
+      const c = mean(f.pts);
+      return !seen(lerp(m, c, 0.02), lerp(m, c, 0.08), occ).length; // a crease shows only if this face does
+    });
+  }
+
+  // Cut a screen polyline where it crosses x = k * step, so a long line can be drawn band by band.
+  function chop(pts, step) {
+    const out = [];
+    let cur = [pts[0]];
+    for (let j = 1; j < pts.length; j++) {
+      const a = pts[j - 1], b = pts[j], ka = Math.floor(a[0] / step), kb = Math.floor(b[0] / step);
+      for (let k = ka; k !== kb; k += kb > ka ? 1 : -1) {
+        const gx = (kb > ka ? k + 1 : k) * step, f = (gx - a[0]) / (b[0] - a[0]);
+        const q = [gx, a[1] + f * (b[1] - a[1])];
+        cur.push(q);
+        out.push(cur);
+        cur = [q];
+      }
+      cur.push(b);
+    }
+    out.push(cur);
+    return out.filter((r) => r.some((q, i) => i && Math.hypot(q[0] - r[i - 1][0], q[1] - r[i - 1][1]) > 1e-6));
+  }
+
+  // Spans of segment a-b (as fractions 0..1) that no face hides.
+  function seen(a, b, occ) {
+    const p = iso(a), q = iso(b), dx = q[0] - p[0], dy = q[1] - p[1], len = Math.hypot(dx, dy);
+    if (len < 1e-9) return [];
+    const lx = Math.min(p[0], q[0]), hx = Math.max(p[0], q[0]), ly = Math.min(p[1], q[1]), hy = Math.max(p[1], q[1]);
+    const spans = [];
+    for (const o of occ) {
+      if (o.b[0] > hx || o.b[2] < lx || o.b[1] > hy || o.b[3] < ly) continue;
+      // Clip the segment to the face's outline on screen (Cyrus-Beck).
+      let u0 = 0, u1 = 1;
+      for (let i = 0; i < o.q.length && u0 < u1; i++) {
+        const s = o.q[i], e = o.q[(i + 1) % o.q.length];
+        const mx = s[1] - e[1], my = e[0] - s[0];
+        const num = mx * (p[0] - s[0]) + my * (p[1] - s[1]), den = mx * dx + my * dy;
+        if (Math.abs(den) < 1e-12) { if (num < -1e-9) u1 = -1; continue; }
+        if (den > 0) u0 = Math.max(u0, -num / den); else u1 = Math.min(u1, -num / den);
+      }
+      if (u1 - u0 < 1e-9) continue;
+      // How far the face is in front of the segment along the line of sight; linear in u.
+      const f = o.f, t = (u) => (f.k - dot(f.n, lerp(a, b, u))) / f.fv;
+      const t0 = t(u0), t1 = t(u1);
+      if (t0 <= EPS && t1 <= EPS) continue;
+      if (t0 > EPS && t1 > EPS) spans.push([u0, u1]);
+      else {
+        const uc = u0 + ((EPS - t0) / (t1 - t0)) * (u1 - u0);
+        spans.push(t0 > EPS ? [u0, uc] : [uc, u1]);
+      }
+    }
+    spans.sort((x, y) => x[0] - y[0]);
+    const vis = [];
+    let at = 0;
+    for (const [s0, s1] of spans) {
+      if (s0 > at) vis.push([at, s0]);
+      at = Math.max(at, s1);
+    }
+    if (at < 1) vis.push([at, 1]);
+    return vis.filter(([s0, s1]) => (s1 - s0) * len > 1e-3);
+  }
+
+  // Hidden-line removal: the edges of every face that looks at the viewer, plus the given 3D polylines,
+  // cut down to the parts no face hides. Returns screen polylines.
+  function hide(faces, items) {
+    const occ = [];
+    for (const f of faces) {
+      if (f.see || f.fv <= EPS) continue;
+      const q0 = f.pts.map(iso), a = area(q0);
+      if (Math.abs(a) < 1e-9) continue;
+      const q = a < 0 ? q0.reverse() : q0;
+      const xs = q.map((v) => v[0]), ys = q.map((v) => v[1]);
+      occ.push({ f, q, b: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] });
+    }
+    const edges = new Map();
+    for (const f of faces) {
+      if (!f.ink || f.fv <= EPS) continue;
+      f.pts.forEach((a, i) => {
+        const b = f.pts[(i + 1) % f.pts.length], ka = key(a), kb = key(b);
+        const k = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+        let e = edges.get(k);
+        if (!e) edges.set(k, (e = { pts: [a, b], faces: [], stage: f.stage, group: f.group }));
+        e.faces.push(f);
+        if (f.stage < e.stage) Object.assign(e, { stage: f.stage, group: f.group });
+      });
+    }
+    const lines = [...[...edges.values()].filter((e) => !seam(e, occ)), ...items];
+    const out = [];
+    for (const l of lines) {
+      let tail = null; // the polyline that reached the end of the last segment, to carry on
+      for (let j = 1; j < l.pts.length; j++) {
+        const a = l.pts[j - 1], b = l.pts[j];
+        let next = null;
+        for (const [u0, u1] of seen(a, b, occ)) {
+          const end = iso(lerp(a, b, u1));
+          let run;
+          if (tail && u0 < 1e-9) { run = tail; run.pts.push(end); }
+          else { run = { pts: [iso(lerp(a, b, u0)), end], stage: l.stage, group: l.group }; out.push(run); }
+          tail = null;
+          if (u1 > 1 - 1e-9) next = run;
+        }
+        tail = next;
+      }
+    }
+    return out;
+  }
+
+  // Lay out a string as pen strokes. Glyph skeletons are in font units, y up; the sheet is y down.
+  function text(str, font, x, y, size, align = 'left') {
+    const k = size / font.upm, placed = [];
+    let adv = 0;
+    for (let n = 0; n < str.length; n++) {
+      const g = font.glyphs[str[n]];
+      if (!g) throw new Error(`Plotline has no glyph for "${str[n]}"`);
+      placed.push([g, adv]);
+      adv += g.adv + (font.kern[str[n] + str[n + 1]] || 0);
+    }
+    const width = adv * k;
+    const x0 = x - (align === 'center' ? width / 2 : align === 'right' ? width : 0);
+    const strokes = [];
+    for (const [g, gx] of placed) {
+      for (const s of g.s) {
+        const pts = [];
+        for (let i = 0; i < s.length; i += 2) pts.push([x0 + (gx + s[i]) * k, y - s[i + 1] * k]);
+        strokes.push(pts);
+      }
+    }
+    return { strokes, width };
+  }
+
+  // Time every pen move: drop onto a stroke, draw it, lift, travel to the next, and park at home.
+  // Long straight runs speed up to `fast` times the pen speed. `pauses` holds the seconds to wait before stroke i.
+  function plan(strokes, { draw, travel, lift, home, fast = 1, ramp = 1, pauses = {} }) {
+    const steps = [];
+    let t = 0, ink = 0, pos = home, down = false;
+    const go = (to, i, raise, drop) => {
+      const move = Math.hypot(to[0] - pos[0], to[1] - pos[1]) / travel;
+      steps.push({ t0: t, t1: t + raise + move + drop, i, from: pos, to, raise, move, drop });
+      t += raise + move + drop;
+    };
+    strokes.forEach((s, i) => {
+      if (pauses[i]) {
+        if (down) go(pos, i, lift, 0), (down = false);
+        steps.push({ t0: t, t1: t + pauses[i], i, from: pos, to: pos, raise: 0, move: pauses[i], drop: 0 });
+        t += pauses[i];
+      }
+      if (!(down && Math.hypot(s[0][0] - pos[0], s[0][1] - pos[1]) < 1e-6)) go(s[0], i, down ? lift : 0, lift);
+      const cum = [0], ct = [0];
+      for (let j = 1; j < s.length; j++) {
+        const l = Math.hypot(s[j][0] - s[j - 1][0], s[j][1] - s[j - 1][1]);
+        cum.push(cum[j - 1] + l);
+        ct.push(ct[j - 1] + l / (draw * Math.min(fast, Math.max(1, Math.sqrt(l / ramp)))));
+      }
+      const dur = ct[ct.length - 1];
+      steps.push({ t0: t, t1: t + dur, i, s, cum, ct });
+      t += dur;
+      ink += dur;
+      pos = s[s.length - 1];
+      down = true;
+    });
+    go(home, strokes.length, down ? lift : 0, 0);
+    return { steps, total: t, ink };
+  }
+
+  // Where the pen is at time t: stroke i is in progress (all before it are done), z = 1 when lifted.
+  function at(p, t) {
+    const { steps } = p;
+    let lo = 0, hi = steps.length - 1;
+    while (lo < hi) {
+      const m = (lo + hi + 1) >> 1;
+      if (steps[m].t0 <= t) lo = m; else hi = m - 1;
+    }
+    const st = steps[lo], u = Math.min(Math.max(t - st.t0, 0), st.t1 - st.t0);
+    if (st.s) {
+      let j = 1;
+      while (j < st.ct.length - 1 && st.ct[j] < u) j++;
+      const a = st.s[j - 1], b = st.s[j] || a, span = st.ct[j] - st.ct[j - 1];
+      const f = span > 0 ? Math.min((u - st.ct[j - 1]) / span, 1) : 1;
+      const d = b === a ? st.cum[j - 1] : st.cum[j - 1] + f * (st.cum[j] - st.cum[j - 1]);
+      return { i: st.i, drawn: d, x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, z: 0 };
+    }
+    let z = 1, f = 1;
+    if (u < st.raise) { z = u / st.raise; f = 0; }
+    else if (u < st.raise + st.move) f = (u - st.raise) / st.move;
+    else if (st.drop) z = 1 - (u - st.raise - st.move) / st.drop;
+    return { i: st.i, drawn: 0, x: st.from[0] + (st.to[0] - st.from[0]) * f, y: st.from[1] + (st.to[1] - st.from[1]) * f, z };
+  }
+
+  // The house, in feet, cut in half through the ridge: the cut is the open front, y = D.
+  // Mirror the drawing across the cut and you get the whole house. The cut side faces the street; the right end wall
+  // has a side door.
+  const T = 0.5, W = 38, D = 13; // wall thickness, inside length, half the depth
+  const WIDER = D - 6.5; // how much deeper than her first house: the furniture spreads out into it
+  const G = 10, F2 = 10.6, K = 15.6; // ground floor ceiling, upstairs floor, top of the back wall upstairs
+  const A0 = 20, A1 = 20.6; // underside and top of the attic floor
+  const SIDE_DOOR = { y0: D - 0.9, y1: D, head: 6.6 }; // centred on the end wall, so the cut takes half
+  const EAVE = -1.2; // the back eave, past the back wall
+
+  // Roof styles: the underside of the roof, as points [y, z] from the top of the back wall to the ridge on the cut. Each
+  // bends only downward, so its gable end is one convex piece; never comes lower than the gable, so every room kit and
+  // attic thing fits under it; and is never shallower than a line of sight, so its top never shows.
+  const ROOF_STYLES = ['gable', 'steep', 'barn'];
+  const PROFILES = {
+    gable: [[0, K], [D, K + 6.5 * Math.sqrt(3)]], // her first house's ridge height, so a 41° roof
+    steep: [[0, K], [D, K + D * Math.tan((50 * Math.PI) / 180)]],
+    barn: [[0, K], [4, 21.8], [D, K + 6.5 * Math.sqrt(3)]], // a gambrel: steep to the knee, then shallower
+  };
+  // A roof: under(y), its underside at y, on past the back wall along its first slope; back(z), where the underside is
+  // at height z; its ridge; the upstairs ceiling under it; and the pieces that follow it.
+  function roofOf(style) {
+    const pts = PROFILES[style] || PROFILES.gable;
+    const through = (a, b) => (v) => {
+      let i = 1;
+      while (i < pts.length - 1 && v > pts[i][a]) i++;
+      const [p, q] = [pts[i - 1], pts[i]];
+      return p[b] + ((v - p[a]) * (q[b] - p[b])) / (q[a] - p[a]);
+    };
+    const under = through(0, 1), back = through(1, 0);
+    const bends = (y0, y1) => pts.filter(([y]) => y > y0 + 1e-9 && y < y1 - 1e-9); // the corners between y0 and y1
+    return {
+      under, back, bends, ridge: under(D),
+      upstairs: (y) => Math.min(under(y), A0), // the roof at the back, then the attic floor
+      // A wall from y0 to y1, from z0 up to the roof.
+      upTo: (y0, y1, z0) => [[y0, z0], [y1, z0], [y1, under(y1)], ...bends(y0, y1).reverse(), [y0, under(y0)]],
+      // The roof from y0 to y1, a foot thick: a piece between each pair of corners.
+      slabs: (y0, y1) => {
+        const ys = [y0, ...bends(y0, y1).map(([y]) => y), y1];
+        return ys.slice(1).map((b, i) => [[ys[i], under(ys[i])], [b, under(b)], [b, under(b) + 1], [ys[i], under(ys[i]) + 1]]);
+      },
+    };
+  }
+  const GABLE_ROOF = roofOf('gable');
+  const GABLE = (z0) => GABLE_ROOF.upTo(-T, D, z0); // half a gable end, cut at the ridge
+  const WINDOW_STYLES = ['classic', 'shutters', 'arched', 'round'];
+
+  // The look: the ballpoint's ink, and the paper. A blueprint is blue paper with white lines, whatever the ink. A grid is
+  // GRID sheet units square.
+  const INKS = ['blue', 'black', 'dark gray', 'red'], PAPERS = ['white', 'grid', 'blueprint', 'blueprint grid'], GRID = 16;
+  const INK = { blue: '#22439a', black: '#1c1d1f', 'dark gray': '#55595f', red: '#b3261e' }; // blue: her ballpoint
+  const PAPER = {
+    white: { paper: '#fdfdfb' }, grid: { paper: '#fdfdfb', grid: '#d5dae1' },
+    blueprint: { paper: '#1f4e8c', ink: '#f6f8fb' }, 'blueprint grid': { paper: '#1f4e8c', ink: '#f6f8fb', grid: '#7d9bc4' },
+  };
+  const look = ({ ink, paper }) => {
+    const p = PAPER[paper] || PAPER.white;
+    return { paper: p.paper, grid: p.grid, ink: p.ink || INK[ink] || INK.blue };
+  };
+
+  // The rooms a player picks from, and one letter for each in a link.
+  const ROOMS = ['lab', 'kitchen', 'dining', 'living', 'bedroom', 'bathroom', 'office'];
+  const CODES = 'lkdvbto';
+  // What stands outside, and the pets: each one there or not, one letter each in a link.
+  const OUTSIDE = ['heat pump', 'rain barrel', 'EV charger', 'delivery box'], PETS = ['cat', 'dog', 'fish'];
+  const ATTIC = ['boxes', 'trunk', 'rocking horse', 'dress form', 'Christmas tree', 'fairy lights'];
+  const EXTRAS = [...OUTSIDE, ...PETS, ...ATTIC];
+  const EXTRA_CODES = 'hrebcdfptomyl';
+  // The slots, left to right: 4 rooms on the ground floor, 3 upstairs, each floor split evenly. Slot i is stage i + 1.
+  const SLOTS = [0, 1, 2, 3].map((i) => ({ x0: (i * W) / 4, x1: ((i + 1) * W) / 4, z: 0 }))
+    .concat([0, 1, 2].map((i) => ({ x0: (i * W) / 3, x1: ((i + 1) * W) / 3, z: F2 })));
+  const KIT = W / 4; // a room kit fits the narrower ground-floor room
+  const ceiling = (i, y, roof = GABLE_ROOF) => (SLOTS[i].z ? roof.upstairs(y) : G); // over slot i, at y
+
+  // A name the pen can write: a letter it has no glyph for loses its accent (ë → e) or drops out; 20 letters at most.
+  const cleanName = (s, font) => [...s].map((c) => (font.glyphs[c] ? c : c.normalize('NFD')[0])).filter((c) => font.glyphs[c])
+    .join('').replace(/\s+/g, ' ').trim().slice(0, 20).trim();
+
+  // A random house: her 7 rooms, each in one slot (Fisher-Yates).
+  function shuffle(rand = Math.random) {
+    const r = ROOMS.slice();
+    for (let i = r.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [r[i], r[j]] = [r[j], r[i]];
+    }
+    return r;
+  }
+  const randomExtras = (rand = Math.random) => EXTRAS.filter(() => rand() < 0.5); // each on a coin toss
+  const randomOf = (list, rand = Math.random) => list[Math.floor(rand() * list.length)];
+
+  // The house lives in the link, after the #, so it never reaches a server: #rooms=lkdvbto&extras=hc&roof=barn&name=Andrea.
+  // One letter per room, ground floor first, left to right; one per thing outside; the roof and windows by name, unless
+  // they are the usual gable and classic. A link with no house, or a broken one, gives a random house. A link from before
+  // the outside things keeps the heat pump it had.
+  function encode({ rooms, name, extras = [], roof = 'gable', windows = 'classic', ink = 'blue', paper = 'white', flip = false }) {
+    const q = new URLSearchParams({ rooms: rooms.map((r) => CODES[ROOMS.indexOf(r)]).join('') });
+    q.set('extras', extras.map((x) => EXTRA_CODES[EXTRAS.indexOf(x)]).join(''));
+    if (roof !== 'gable') q.set('roof', roof);
+    if (windows !== 'classic') q.set('windows', windows);
+    if (ink !== 'blue') q.set('ink', ink);
+    if (paper !== 'white') q.set('paper', paper);
+    if (flip) q.set('flip', '1');
+    if (name) q.set('name', name);
+    return q.toString();
+  }
+  function decode(hash, font) {
+    const q = new URLSearchParams(hash.replace(/^#/, '')), codes = [...(q.get('rooms') || '')], ex = q.get('extras');
+    const ok = codes.length === SLOTS.length && codes.every((c) => CODES.includes(c));
+    return {
+      rooms: ok ? codes.map((c) => ROOMS[CODES.indexOf(c)]) : shuffle(),
+      extras: ex !== null ? EXTRAS.filter((_, k) => ex.includes(EXTRA_CODES[k])) : ok ? ['heat pump'] : randomExtras(),
+      roof: ROOF_STYLES.includes(q.get('roof')) ? q.get('roof') : ok ? 'gable' : randomOf(ROOF_STYLES),
+      windows: WINDOW_STYLES.includes(q.get('windows')) ? q.get('windows') : ok ? 'classic' : randomOf(WINDOW_STYLES),
+      ink: INKS.includes(q.get('ink')) ? q.get('ink') : 'blue',
+      paper: PAPERS.includes(q.get('paper')) ? q.get('paper') : 'white',
+      flip: q.get('flip') === '1',
+      name: cleanName(q.get('name') || '', font),
+    };
+  }
+
+  // Two pens draw at once, each from the far left end of the house to the side door.
+  const PENS = [
+    { name: 'ground floor', stages: [1, 2, 3, 4], start: [-T, D, 0] },
+    { name: 'upstairs and attic', stages: [5, 6, 7, 8], start: [-T, D, F2] },
+  ];
+
+  function scene(font, house) {
+    const faces = [], items = [], words = [];
+    const roof = roofOf(house.roof), { under, back, ridge: RIDGE } = roof;
+    const ATTIC_FLOOR = [[back(A0), A0], [D, A0], [D, A1], [back(A1), A1]];
+    let stage = 0, group = 0, kit, tag; // tag: the name of the attic thing being drawn, for the tests
+    // A room kit draws in its own room: x from the room's left wall, y from the back wall, z from its floor. origin is
+    // where that room is in the house; every group the kit starts is moved there.
+    let origin = [0, 0, 0];
+    const moved = [];
+    const next = (st = stage) => { stage = st; group++; moved[group] = origin; };
+    const meta = (o) => ({ stage, group, kit, tag, ...o });
+    // move(dx, dy): this group stands dx feet further right and dy further from the back wall, so the furniture spreads
+    // out in the deeper house and stays clear of what the end wall hides.
+    const move = (dx, dy) => { moved[group] = [origin[0] + dx, origin[1] + dy, origin[2]]; };
+    const B = (x0, y0, z0, x1, y1, z1, o) => faces.push(...box(x0, y0, z0, x1, y1, z1, meta(o)));
+    const P = (axis, poly, a0, a1, o) => faces.push(...prism(axis, poly, a0, a1, meta(o)));
+    const L = (pts) => items.push({ pts, stage, group, tag });
+    const on = (axis, a, pts) => L(pts.map((p) => AXES[axis](a, p)));
+    // A thin flat card, like a box flap: one face each way, so it hides what is behind it from either side.
+    const slab = (y0, y1, x0, x1) => { for (const poly of roof.slabs(y0, y1)) P('x', poly, x0, x1, { join: true }); }; // roof
+    const card = (pts, o) => faces.push(...solid([pts], meta(o)), ...solid([pts.slice().reverse()], meta(o)));
+    // A line drawn flat on the screen at depth d: the front of its object, so the object's own solid does not hide it.
+    const flat = (pts, d) => L(pts.map((q) => unIso(q, d + 0.01)));
+    const front = (...p) => dot(p, VIEW);
+    const ell2 = (cx, cy, rx, ry, a0, a1, n) => arc2(0, 0, 1, a0, a1, n).map(([u, v]) => [cx + rx * u, cy + ry * v]);
+
+    // Section hatch on a cut face in the plane y = yc: one zigzag line, so the pen stays down.
+    function hatch(x0, x1, z0, z1, yc = D, step = 0.5) {
+      const pts = [];
+      let flip = false;
+      for (let c = Math.ceil((x0 - z1) / step) * step; c < x1 - z0; c += step) {
+        const lo = Math.max(z0, x0 - c), hi = Math.min(z1, x1 - c);
+        if (hi - lo < 0.05) continue;
+        const a = [lo + c, lo], b = [hi + c, hi];
+        const [s, e] = flip ? [b, a] : [a, b];
+        const last = pts[pts.length - 1];
+        // Round the corner when the zigzag turns from one side of the face to the next.
+        if (last && last[0] !== s[0] && last[1] !== s[1]) pts.push(flip ? [x1, z1] : [x0, z0]);
+        pts.push(s, e);
+        flip = !flip;
+      }
+      if (pts.length) on('y', yc, pts);
+    }
+
+    // A turned object round a vertical axis: profile [[dz, r, arc?], ...] from the bottom up.
+    // Draws the rim, the side silhouettes and the front arcs; `solid` also makes it hide what is behind it.
+    function turned(cx, cy, z0, prof, solidToo = true) {
+      const rMax = Math.max(...prof.map((p) => p[1])), zTop = z0 + prof[prof.length - 1][0];
+      const d = front(cx, cy, zTop) + rMax * Math.hypot(VIEW[0], VIEW[1]);
+      const ring = ([dz, r], a0 = SIL, a1 = SIL + 2 * Math.PI, n = 48) =>
+        arc2(cx, cy, r, a0, a1, n).map(([x, y]) => iso([x, y, z0 + dz]));
+      for (let i = 1; i < prof.length; i++) {
+        const a = ring(prof[i - 1]).map((p) => [...p, 0]), b = ring(prof[i]).map((p) => [...p, 1]);
+        const h = hull([...a, ...b]);
+        h.forEach((p, j) => {
+          const q = h[(j + 1) % h.length];
+          if (p[2] !== q[2]) flat([[p[0], p[1]], [q[0], q[1]]], d);
+        });
+        if (solidToo && (prof[i - 1][1] > 0 || prof[i][1] > 0)) {
+          const r3 = ([dz, r]) => arc2(cx, cy, r, SIL, SIL + 2 * Math.PI, 16).slice(0, -1).map(([x, y]) => [x, y, z0 + dz]);
+          const ra = r3(prof[i - 1]), rb = r3(prof[i]);
+          faces.push(...solid([ra, rb, ...ra.map((_, j) => { const k = (j + 1) % ra.length; return [ra[j], ra[k], rb[k], rb[j]]; })], meta({ ink: false })));
+        }
+      }
+      flat(ring(prof[prof.length - 1]), d);
+      prof.forEach((p, i) => { if (p[2] && p[1] > 0) flat(ring(p, SIL, SIL + Math.PI, 24), d); });
+    }
+
+    // A pet, doodled flat on the screen like the bird in the attic: an egg of a body, a round head on top, and the strokes
+    // in `more`, in units k screen units long, y up the screen negative, standing at p. A card behind it hides what is
+    // behind it.
+    function pet(p, k, [bx, by, rx, ry], [hx, hy, r], more) {
+      const [sx, sy] = iso(p), d = front(...p) + 0.5, at = ([x, y]) => [sx + k * x, sy + k * y], draw = (pts) => flat(pts.map(at), d);
+      draw(arc2(hx, hy, r, Math.PI / 2, 2.5 * Math.PI, 32).filter(([x, y]) => ((x - bx) / rx) ** 2 + ((y - by) / ry) ** 2 >= 1));
+      draw(ell2(bx, by, rx, ry, -Math.PI / 2, 1.5 * Math.PI, 40).filter(([x, y]) => Math.hypot(x - hx, y - hy) >= r));
+      more.forEach(draw);
+      card(hull([...arc2(hx, hy, r, 0, 2 * Math.PI, 16), ...ell2(bx, by, rx, ry, 0, 2 * Math.PI, 24)]).map((q) => unIso(at(q), d - 0.02)), { ink: false });
+    }
+    const mirror = (pts) => pts.map(([x, y]) => [-x, y]);
+    const has = (x) => (house.extras || []).includes(x);
+
+    // The ground-floor shell under one room: slab, back wall and the slab's cut face.
+    function room(x0, x1) {
+      B(x0, -T, -0.8, x1, D, 0, { join: true });
+      B(Math.max(x0, 0), -T, 0, x1, 0, G, { join: true });
+      hatch(x0, x1, -0.8, 0);
+    }
+    // The upstairs floor under one room: drawn by the upstairs pen, so nothing upstairs floats.
+    function upstairsFloor(x0, x1) {
+      B(x0, -T, G, x1, D, F2, { join: true });
+      hatch(x0, x1, G, F2);
+    }
+    // A glass wall at x from z0 up to the ceiling ceil(y), which bends at `bends`: a frame of posts and rails round one pane.
+    function glass(x, z0, ceil, bends = []) {
+      const side = (pts) => P('x', pts, x, x + 0.15);
+      for (const [y0, y1] of [[0, 0.15], [D - 0.15, D]]) side([[y0, z0], [y1, z0], [y1, ceil(y1)], [y0, ceil(y0)]]); // posts
+      B(x, 0.15, z0, x + 0.15, D - 0.15, z0 + 0.2);
+      const ys = [0.15, ...bends, D - 0.15];
+      for (let i = 1; i < ys.length; i++) {
+        const [a, b] = [ys[i - 1], ys[i]];
+        side([[a, ceil(a) - 0.2], [b, ceil(b) - 0.2], [b, ceil(b)], [a, ceil(a)]]);
+      }
+    }
+
+    // ---- Room kits: each draws its furniture in its own room, from x = 0.15 (past the glass post) to KIT ----
+    // Upstairs the roof comes down to 5 ft at the back wall, so a kit stays under that too. top(y) is the room's ceiling.
+    const KITS = {
+      lab() {
+        next(); // the machine: bench, board, two gears, two pulleys, rope and weight
+        move(0.2, WIDER / 2);
+        B(0, 1.8, 0, 2.4, 6.2, 2.6);
+        for (const [y0, y1] of [[2.05, 3.9], [4.1, 5.95]]) {
+          on('x', 2.4, rect2(y0, 1.85, y1, 2.4));
+          on('x', 2.42, arc2((y0 + y1) / 2, 2.12, 0.08, 0, 2 * Math.PI, 10));
+        }
+        B(0, 1.8, 2.6, 0.4, 6.3, 8.2);
+        const BX = 0.45, g1 = [4.6, 4.5], g2 = [2.91, 3.64], p1 = [5.75, 6.6];
+        on('x', BX, gear2(...g1, 1.3, 1.08, 12));
+        on('x', BX, arc2(...g1, 0.82, 0, 2 * Math.PI, 28));
+        on('x', BX, arc2(...g1, 0.32, 0, 2 * Math.PI, 16));
+        for (let i = 0; i < 4; i++) {
+          const a = (i * Math.PI) / 2 + 0.4;
+          on('x', BX, [[g1[0] + 0.32 * Math.cos(a), g1[1] + 0.32 * Math.sin(a)], [g1[0] + 0.82 * Math.cos(a), g1[1] + 0.82 * Math.sin(a)]]);
+        }
+        on('x', BX, gear2(...g2, 0.78, 0.6, 8, 0.2));
+        on('x', BX, arc2(...g2, 0.18, 0, 2 * Math.PI, 12));
+        on('x', BX, arc2(...p1, 0.5, 0, 2 * Math.PI, 24));
+        on('x', BX, arc2(...p1, 0.36, 0, 2 * Math.PI, 20));
+        on('x', BX, arc2(...p1, 0.08, 0, 2 * Math.PI, 8));
+        for (const seg of belt(g1, 0.32, p1, 0.36)) on('x', BX + 0.02, seg);
+        L([[BX, ...g1], [0.95, ...g1], [0.95, g1[0], g1[1] - 0.95], [1.45, g1[0], g1[1] - 0.95]]); // crank
+        B(0.4, 5.55, 7.6, 4.0, 5.85, 7.85); // arm
+        const p2 = [3.6, 7.0];
+        L([[3.6, 5.85, 7.6], [3.6, 5.9, p2[1]]]);
+        on('y', 5.95, arc2(...p2, 0.45, 0, 2 * Math.PI, 24));
+        on('y', 5.95, arc2(...p2, 0.33, 0, 2 * Math.PI, 20));
+        L([[BX, p1[0], p1[1] + 0.5], [p2[0], 5.95, p2[1] + 0.45]]); // rope over both pulleys
+        on('y', 5.95, [...arc2(...p2, 0.45, Math.PI / 2, 0, 8), [p2[0] + 0.45, 4.75]]);
+        B(3.8, 5.7, 4.15, 4.3, 6.2, 4.75); // weight
+
+        next(); // lab table with glassware, against the back wall
+        move(0.2, 0);
+        const TT = 2.6; // the table top
+        B(3.4, 0.3, TT - 0.25, 8.8, 2.3, TT);
+        for (const [x, y] of [[3.55, 0.45], [8.4, 0.45], [3.55, 1.9], [8.4, 1.9]]) B(x, y, 0, x + 0.25, y + 0.25, TT - 0.25);
+        turned(4.6, 1.3, TT, [[0, 0.55, true], [0.35, 0.42, true], [0.9, 0.17], [1.45, 0.17], [1.5, 0.22]], false); // flask
+        turned(6.0, 1.2, TT, [[0, 0.42, true], [0.5, 0.42, true], [1.1, 0.42]], false); // beaker
+        turned(7.4, 1.35, TT, [[0, 0], [0.12, 0.3], [0.45, 0.5, true], [0.8, 0.36], [0.95, 0.14], [1.6, 0.14], [1.65, 0.18]], false); // round flask
+        for (const [x, y, r] of [[4.6, 1.3, 0.07], [4.62, 1.3, 0.05], [7.4, 1.35, 0.06]]) {
+          const [sx, sy] = iso([x, y, TT + (r === 0.05 ? 2.05 : r === 0.07 ? 1.75 : 1.95)]);
+          flat(arc2(sx, sy, r, 0, 2 * Math.PI, 10), front(x, y, TT + 2));
+        }
+
+        next(); // cage, with a robot guinea pig, out in front: further back, it shows behind the next room
+        move(-0.3, 6.8);
+        const cg = [4.6, 3.4, 8.8, 5.7, 2.2];
+        B(cg[0], cg[1], 0, cg[2], cg[3], 0.35);
+        const [c0, c1, c2, c3, ch] = cg;
+        for (const [a, b] of [
+          [[c0, c1, 0.35], [c2, c1, 0.35]], [[c0, c3, 0.35], [c2, c3, 0.35]], [[c0, c1, 0.35], [c0, c3, 0.35]], [[c2, c1, 0.35], [c2, c3, 0.35]],
+          [[c0, c1, ch], [c2, c1, ch]], [[c0, c3, ch], [c2, c3, ch]], [[c0, c1, ch], [c0, c3, ch]], [[c2, c1, ch], [c2, c3, ch]],
+          [[c0, c1, 0.35], [c0, c1, ch]], [[c2, c1, 0.35], [c2, c1, ch]], [[c0, c3, 0.35], [c0, c3, ch]], [[c2, c3, 0.35], [c2, c3, ch]],
+        ]) L([a, b]);
+        for (let x = c0 + 0.5; x < c2 - 0.1; x += 0.5) L([[x, c3, 0.35], [x, c3, ch]]);
+        for (let y = c1 + 0.5; y < c3 - 0.1; y += 0.5) L([[c2, y, 0.35], [c2, y, ch]]);
+        const gp = [6.7, 4.55, 1.0], ax = [1.25, 0.72, 0.62];
+        B(gp[0] - 0.72 * ax[0], gp[1] - 0.72 * ax[1], gp[2] - 0.72 * ax[2], gp[0] + 0.72 * ax[0], gp[1] + 0.72 * ax[1], gp[2] + 0.72 * ax[2], { ink: false });
+        const surf = (u) => { const l = Math.hypot(...u); return gp.map((c, i) => c + (ax[i] * u[i]) / l); };
+        const gd = front(...gp) + reach(ax);
+        const shell = [];
+        for (let la = -90; la <= 90; la += 10) {
+          for (let lo = 0; lo < 360; lo += 6) {
+            const a = (la * Math.PI) / 180, b = (lo * Math.PI) / 180;
+            shell.push(iso(surf([Math.cos(a) * Math.cos(b), Math.cos(a) * Math.sin(b), Math.sin(a)])));
+          }
+        }
+        const body = hull(shell);
+        flat([...body, body[0]], gd);
+        const seamX = [];
+        for (let k = 0; k <= 40; k++) {
+          const f = (2 * Math.PI * k) / 40, cy = Math.cos(f), sz = Math.sin(f);
+          if (cy / ax[1] + sz / ax[2] > -0.05) seamX.push(iso(surf([-0.25, 0.97 * cy, 0.97 * sz])));
+        }
+        flat(seamX, gd);
+        const eye = iso(surf([0.62, 0.62, 0.42]));
+        flat(arc2(...eye, 0.08, 0, 2 * Math.PI, 12), gd);
+        flat(arc2(...iso(surf([1, 0.05, 0.1])), 0.05, 0, 2 * Math.PI, 8), gd);
+        const ear = iso(surf([0.45, 0.35, 0.82]));
+        flat(arc2(ear[0], ear[1], 0.13, Math.PI, 2 * Math.PI, 10), gd);
+        const top = surf([0.3, 0, 1]), tip = iso([top[0], top[1], top[2] + 0.5]);
+        flat([iso(top), tip], gd);
+        flat(arc2(tip[0], tip[1] - 0.07, 0.07, 0, 2 * Math.PI, 10), gd);
+        for (const dx of [-0.65, 0.65]) on('y', gp[1] + 0.55, arc2(gp[0] + dx, 0.55, 0.2, 0, 2 * Math.PI, 14));
+      },
+
+      kitchen() {
+        // A galley along the wall on the left, its doors facing the room, so the end wall cannot hide it: the fridge at
+        // the back, then the counter with the sink and the hob over the oven.
+        next();
+        B(0.2, 0.3, 0, 2.5, 2.5, 4.9); // fridge: under 5 ft, for the roof at the back upstairs
+        on('x', 2.5, [[0.3, 3.8], [2.5, 3.8]]);
+        on('x', 2.5, [[2.2, 4.05], [2.2, 4.6]]);
+        on('x', 2.5, [[2.2, 2.4], [2.2, 3.4]]);
+        const [c0, c1] = [2.7, 9.7]; // the counter's ends
+        B(0.2, c0, 0, 2.3, c1, 2.8);
+        B(0.2, c0, 2.8, 2.4, c1 + 0.1, 3.0);
+        on('x', 2.3, [[4.75, 0.15], [4.75, 2.1]]); // cupboard doors and a drawer
+        on('x', 2.3, [[6.6, 0.15], [6.6, 2.7]]);
+        on('x', 2.3, rect2(c0 + 0.2, 2.2, 6.4, 2.5));
+        on('x', 2.3, rect2(6.8, 0.4, 8.9, 2.3)); // oven
+        on('x', 2.3, [[6.95, 2.05], [8.75, 2.05]]);
+        on('z', 3.0, rect2(0.6, 3.6, 1.9, 4.7)); // sink
+        on('z', 3.0, rect2(0.75, 3.75, 1.75, 4.55));
+        for (const [x, y] of [[0.8, 7.4], [1.65, 7.4], [0.8, 8.3], [1.65, 8.3]]) on('z', 3.0, arc2(x, y, 0.25, 0, 2 * Math.PI, 16)); // hob
+        L([[0.4, 4.15, 3.0], [0.4, 4.15, 3.8], [0.95, 4.15, 3.8], [0.95, 4.15, 3.55]]); // tap
+      },
+
+      dining(top) {
+        next(); // a square table, two chairs facing each other, a lamp on a cord
+        const dy = WIDER / 2 + 2;
+        move(-17.95, dy);
+        B(20.3, 1.85, 2.4, 23.5, 5.05, 2.6);
+        for (const [x, y] of [[20.5, 2.05], [23.05, 2.05], [20.5, 4.6], [23.05, 4.6]]) B(x, y, 0, x + 0.25, y + 0.25, 2.4);
+        // A chair at each end of the table: x0 is the inside of its back, s the way it faces.
+        for (const [x0, s] of [[19.3, 1], [24.5, -1]]) {
+          const xb = x0 - 0.2 * s, xs = x0 + 1.2 * s, [y0, y1] = [2.85, 4.05]; // the outside of the back, the front of the seat
+          B(Math.min(xb, x0), y0, 1.45, Math.max(xb, x0), y1, 3.4); // back
+          B(Math.min(x0, xs), y0, 1.45, Math.max(x0, xs), y1, 1.6); // seat
+          for (const x of [Math.min(xb, xs), Math.max(xb, xs) - 0.12]) for (const y of [y0, y1 - 0.12]) B(x, y, 0, x + 0.12, y + 0.12, 1.45);
+        }
+        L([[21.9, 3.45, top(3.45 + dy)], [21.9, 3.45, 6.4]]);
+        turned(21.9, 3.45, 5.6, [[0, 0.9, true], [0.8, 0.25]]);
+      },
+
+      living() {
+        // The sofa faces the room on its right, its back to the room on its left. The floor lamp stands by its far arm,
+        // part hidden behind it.
+        next();
+        const SOFA = [2.1, 6.8], LAMP = [SOFA[0] + 1.3, SOFA[1] - 1.0]; // the sofa's back corner, and the lamp
+        const [sx0, sy0] = SOFA;
+        B(sx0, sy0, 0, sx0 + 0.6, sy0 + 5.4, 2.8); // sofa back
+        B(sx0 + 0.6, sy0, 0, sx0 + 2.6, sy0 + 0.6, 2.0); // arms
+        B(sx0 + 0.6, sy0 + 4.8, 0, sx0 + 2.6, sy0 + 5.4, 2.0);
+        B(sx0 + 0.6, sy0 + 0.6, 0, sx0 + 2.5, sy0 + 4.8, 1.3); // seat
+        for (const y of [sy0 + 2.0, sy0 + 3.4]) L([[sx0 + 0.6, y, 1.3], [sx0 + 2.5, y, 1.3], [sx0 + 2.5, y, 0.4]]);
+        L([[...LAMP, 0.1], [...LAMP, 5.0]]);
+        turned(...LAMP, 0, [[0, 0.4, true], [0.1, 0.4]]);
+        turned(...LAMP, 5.0, [[0, 0.75, true], [0.9, 0.45]]);
+      },
+
+      bedroom() {
+        // The bed stands out in the room, its head against the wall on the left, so the end wall cannot hide it. Behind
+        // it, a mug of tea; in front, the toddler table on a rug. Nothing stands at the back on the right: that part of a
+        // room shows over the room on its right.
+        next(); // toddler bed with a rail, pillow and blanket, the rail on the side facing us
+        move(0, 6.4);
+        const [BW, BL] = [2.9, 5.6], bx = 0.2; // the head end
+        B(bx, 0, 0, bx + 0.3, BW, 2.4); // headboard
+        B(bx + 0.3, 0, 0, bx + BL - 0.3, BW, 0.8);
+        B(bx + BL - 0.3, 0, 0, bx + BL, BW, 1.8); // footboard
+        B(bx + 0.4, 0.1, 0.8, bx + BL - 0.4, BW - 0.1, 1.25); // mattress
+        B(bx + 0.5, 0.3, 1.25, bx + 1.4, BW - 0.3, 1.6); // pillow
+        for (const u of [2.2, 2.45]) L([[bx + u, 0.1, 1.25], [bx + u, BW - 0.1, 1.25], [bx + u, BW - 0.1, 0.85]]);
+        B(bx + 0.3, BW - 0.1, 1.85, bx + 2.6, BW + 0.05, 2.0); // rail
+        B(bx + 2.45, BW - 0.1, 0.8, bx + 2.6, BW + 0.05, 1.85);
+        for (const u of [0.9, 1.5, 2.05]) L([[bx + u, BW + 0.05, 1.25], [bx + u, BW + 0.05, 1.85]]);
+
+        next(); // side table and a mug of hot tea, by the head of the bed
+        move(-4.7, 2.3);
+        turned(5.7, 3.1, 0, [[0, 0.35, true], [0.08, 0.35, true], [0.08, 0.1], [1.7, 0.1], [1.7, 0.6, true], [1.9, 0.6]]);
+        const MZ = 1.9;
+        turned(5.7, 3.1, MZ, [[0, 0.3, true], [0.62, 0.3]]);
+        const [mx, my] = iso([5.7, 3.1, MZ]), mr = 0.3 * SCR, up = (h) => my - h * UP; // up: the screen y h feet over the mug's foot
+        flat(arc2(5.7, 3.1, 0.3 * 0.85, 0, 2 * Math.PI, 24).map(([x, y]) => iso([x, y, MZ + 0.56])), front(5.7, 3.1, MZ + 0.62) + 0.3); // the tea
+        flat([[mx + mr, up(0.48)], [mx + mr + 0.2, up(0.46)], [mx + mr + 0.24, up(0.3)], [mx + mr + 0.2, up(0.14)], [mx + mr, up(0.12)]], front(5.7, 3.1, MZ) + 0.5);
+        for (const [dx, ph] of [[-0.12, 0], [0.12, 1.8]]) {
+          flat(Array.from({ length: 10 }, (_, i) => [mx + dx + 0.07 * Math.sin(i * 0.9 + ph), up(0.8 + i * 0.1)]), front(5.7, 3.1, MZ + 1.5));
+        }
+
+        next(); // a round rug with a border, under the toddler table and chair
+        for (const r of [2.2, 1.9]) on('z', 0, arc2(7.0, 10.6, r, 0, 2 * Math.PI, 48));
+
+        next(); // toddler table and chair, on the rug
+        move(-7.3, 5.9);
+        B(13.2, 4.0, 1.35, 15.0, 5.6, 1.5);
+        for (const [x, y] of [[13.3, 4.1], [14.75, 4.1], [13.3, 5.35], [14.75, 5.35]]) B(x, y, 0, x + 0.15, y + 0.15, 1.35);
+        B(15.3, 4.35, 0.8, 16.1, 5.25, 0.92);
+        for (const [x, y] of [[15.3, 4.35], [15.98, 4.35], [15.3, 5.13], [15.98, 5.13]]) B(x, y, 0, x + 0.12, y + 0.12, 0.8);
+        B(16.1, 4.35, 0.8, 16.25, 5.25, 1.9);
+
+        next(); // toys on the floor: blocks, one stacked, one landed turned, a ball and stacking rings
+        const BK = 0.5; // a block's side
+        for (const [x, y, z] of [[1.0, 10.9, 0], [1.55, 10.95, 0], [1.27, 10.92, BK]]) B(x, y, z, x + BK, y + BK, z + BK);
+        const turn = (Math.PI * 30) / 180, [qx, qy] = [2.9, 12.3];
+        P('z', [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => [qx + (BK / 2) * (u * Math.cos(turn) - v * Math.sin(turn)), qy + (BK / 2) * (u * Math.sin(turn) + v * Math.cos(turn))]), 0, BK);
+        const BALL = [3.0, 10.6, 0.4], BR = 0.4;
+        B(BALL[0] - 0.55 * BR, BALL[1] - 0.55 * BR, 0, BALL[0] + 0.55 * BR, BALL[1] + 0.55 * BR, BALL[2] + 0.55 * BR, { ink: false });
+        const [bsx, bsy] = iso(BALL), bd = front(...BALL) + reach([BR, BR, BR]);
+        flat(arc2(bsx, bsy, BR * SCR, 0, 2 * Math.PI, 32), bd);
+        flat(ell2(bsx, bsy, BR * SCR, 0.35 * BR * SCR, 0, Math.PI, 16), bd); // a stripe round its middle
+        flat(ell2(bsx, bsy, 0.45 * BR * SCR, BR * SCR, -Math.PI / 2, Math.PI / 2, 16), bd); // and one over the top
+        turned(4.6, 12.1, 0, [[0, 0.3, true], [0.06, 0.3, true], [0.06, 0.28], [0.18, 0.28, true], [0.18, 0.23], [0.29, 0.23, true], [0.29, 0.18],
+          [0.39, 0.18, true], [0.39, 0.13], [0.48, 0.13, true], [0.48, 0.05], [0.6, 0.05], [0.6, 0.08, true], [0.68, 0.08]]);
+      },
+
+      bathroom() {
+        // Toilet against the wall on the left, facing the room, so the end wall cannot hide it: tank, lid, flush lever,
+        // bowl and seat.
+        next();
+        const TY = 5.2; // its middle
+        B(0.15, TY - 0.8, 1.3, 0.75, TY + 0.8, 2.45);
+        B(0.15, TY - 0.85, 2.45, 0.8, TY + 0.85, 2.55);
+        on('x', 0.75, [[TY - 0.65, 2.2], [TY - 0.35, 2.2]]);
+        turned(1.45, TY, 0, [[0, 0.42, true], [0.75, 0.42], [1.2, 0.7, true], [1.3, 0.7]]);
+        L(arc2(1.53, TY, 0.45, 0, 2 * Math.PI, 24).map(([x, y]) => [x, y, 1.31]));
+
+        // A clawfoot tub at the front, an oval rim and a tap at one end. Anything at the back of a room shows over the
+        // room on its right, so the tub stays out in front.
+        next();
+        const [ux0, ux1, uy0, uy1, UZ] = [3.6, 9.2, 10.0, 12.6, 1.9]; // its ends, its back and front, and its rim
+        for (const x of [ux0 + 0.2, ux1 - 0.45]) for (const y of [uy0 + 0.2, uy1 - 0.45]) B(x, y, 0, x + 0.25, y + 0.25, 0.3); // feet
+        B(ux0, uy0, 0.3, ux1, uy1, UZ);
+        const ur = (uy1 - uy0 - 0.4) / 2, uc = uy0 + 0.2 + ur;
+        on('z', UZ, [...arc2(ux0 + 0.2 + ur, uc, ur, Math.PI / 2, 1.5 * Math.PI, 12), ...arc2(ux1 - 0.2 - ur, uc, ur, -Math.PI / 2, Math.PI / 2, 12),
+          [ux0 + 0.2 + ur, uc + ur]]);
+        L([[ux0 + 0.1, uc, UZ], [ux0 + 0.1, uc, UZ + 0.6], [ux0 + 0.5, uc, UZ + 0.6], [ux0 + 0.5, uc, UZ + 0.4]]);
+
+        // A pedestal washbasin with a tap against the wall on the left, and a mirror on the wall above it: the floor
+        // above hides the back wall that high up.
+        next();
+        const [KX, KY, KZ] = [0.9, 9.5, 2.4]; // the basin's middle and its rim
+        turned(KX, KY, 0, [[0, 0.32, true], [0.1, 0.32], [0.1, 0.17], [KZ - 0.55, 0.17], [KZ - 0.15, 0.62, true], [KZ, 0.62]]);
+        flat(arc2(KX + 0.05, KY, 0.45, 0, 2 * Math.PI, 24).map(([x, y]) => iso([x, y, KZ - 0.05])), front(KX, KY, KZ) + 0.3);
+        L([[KX - 0.45, KY, KZ], [KX - 0.45, KY, KZ + 0.3], [KX - 0.1, KY, KZ + 0.3], [KX - 0.1, KY, KZ + 0.15]]);
+        const MX = 0.23, [my0, my1, mz0, mz1] = [KY - 0.55, KY + 0.55, KZ + 0.55, KZ + 2.15]; // the mirror's face and edges
+        B(0.15, my0, mz0, MX, my1, mz1);
+        on('x', MX, rect2(my0 + 0.1, mz0 + 0.1, my1 - 0.1, mz1 - 0.1));
+        for (const g of [0.45, 0.75]) on('x', MX, [[my1 - 0.25, mz1 - g], [my1 - g, mz1 - 0.25]]); // two glints
+      },
+
+      office() {
+        next(); // a large desk: monitor, keyboard, and a notebook with a pen
+        move(-20.2, 6);
+        const DT = 2.5; // the desk top
+        B(21.8, 0.15, 2.3, 29.0, 2.6, DT);
+        B(21.9, 0.25, 0, 23.3, 2.5, 2.3); // drawers
+        for (const z of [0.8, 1.55]) on('y', 2.5, [[21.9, z], [23.3, z]]);
+        for (const z of [0.45, 1.2, 1.95]) on('y', 2.5, [[22.45, z], [22.75, z]]);
+        for (const y of [0.25, 2.3]) B(28.6, y, 0, 28.8, y + 0.2, 2.3);
+        B(25.1, 0.95, DT, 26.0, 1.55, DT + 0.05); // monitor foot, neck and screen
+        B(25.45, 1.15, DT + 0.05, 25.65, 1.3, DT + 0.4);
+        B(24.0, 1.3, DT + 0.35, 27.1, 1.42, DT + 1.55);
+        on('y', 1.42, rect2(24.12, DT + 0.47, 26.98, DT + 1.43));
+        B(24.5, 1.75, DT, 26.6, 2.25, DT + 0.06); // keyboard
+        B(22.4, 1.2, DT, 23.6, 2.3, DT + 0.12); // notebook
+        on('z', DT + 0.12, [[23.35, 1.2], [23.35, 2.3]]); // its elastic band
+        const NB = DT + 0.12;
+        L([[22.55, 2.1, NB], [23.4, 1.45, NB], [23.47, 1.38, NB], [23.44, 1.5, NB], [22.6, 2.16, NB], [22.55, 2.1, NB]]); // pen
+
+        next(); // a plant in a pot, by the desk
+        move(-29.2, 5.6);
+        turned(30.0, 1.4, 0, [[0, 0.4, true], [0.9, 0.55]]);
+        const [px, py] = iso([30.0, 1.4, 0.9]), pd = front(30.0, 1.4, 2.5);
+        for (const [ang, len] of [[-0.9, 1.5], [-0.35, 1.9], [0.2, 1.7], [0.7, 1.4], [-0.6, 1.1]]) {
+          const tip = [px + len * Math.sin(ang), py - len * Math.cos(ang)], nx = Math.cos(ang) * 0.22, ny = Math.sin(ang) * 0.22;
+          const mid = [(px + tip[0]) / 2, (py + tip[1]) / 2];
+          flat([[px, py - 0.05], [mid[0] - nx, mid[1] - ny], tip, [mid[0] + nx, mid[1] + ny], [px, py - 0.05]], pd);
+        }
+
+        next(); // desk chair
+        move(-20.2, 6);
+        B(24.4, 2.9, 1.5, 26.2, 4.5, 1.75);
+        B(24.4, 4.3, 1.75, 26.2, 4.5, 3.4);
+        B(25.22, 3.62, 0.15, 25.38, 3.78, 1.5);
+        B(24.5, 3.62, 0.15, 25.22, 3.78, 0.3);
+        B(25.38, 3.62, 0.15, 26.1, 3.78, 0.3);
+        B(25.22, 2.95, 0.15, 25.38, 3.62, 0.3);
+        B(25.22, 3.78, 0.15, 25.38, 4.45, 0.3);
+
+        next(); // low bookshelf against the wall on the left
+        move(0, WIDER / 2);
+        B(0.15, 5.4, 0, 1.15, 6.4, 2.6);
+        const SX = 1.15;
+        for (const z of [0.15, 1.3]) {
+          on('x', SX, [[5.45, z], [6.35, z]]);
+          let y = 5.5;
+          for (const [w, h] of [[0.22, 0.85], [0.18, 0.95], [0.28, 0.78]]) {
+            on('x', SX, rect2(y, z, y + w, z + h));
+            y += w + 0.02;
+          }
+        }
+        on('x', SX, [[5.45, 2.45], [6.35, 2.45]]);
+      },
+    };
+
+    // ---- First view: the lawn in front of the house, on the street side ----
+    // A picket sign with the player's name, facing the street, and a few tufts of grass. The lawn things stand far enough
+    // out that they hide nothing in the house.
+    next(0);
+    const X = W + T;
+    const SGX = 23.5, SGY = D + 8, EM = 0.95; // the sign's middle along the house, between the dog and the pond, and its letter size in feet
+    const sign = cleanName(house.name || '', font) || 'welcome';
+    const word = text(sign, font, 0, 0, EM), half = word.width / 2 + 0.3;
+    for (const px of [SGX - half + 0.5, SGX + half - 0.5]) {
+      B(px - 0.06, SGY - 0.12, -0.8, px + 0.06, SGY, 2.75); // pickets
+      P('y', [[px - 0.06, 2.75], [px + 0.06, 2.75], [px, 2.97]], SGY - 0.12, SGY);
+    }
+    B(SGX - half, SGY, 1.05, SGX + half, SGY + 0.1, 2.5); // sign board
+    on('y', SGY + 0.1, rect2(SGX - half + 0.12, 1.17, SGX + half - 0.12, 2.38));
+    // Centre the letters on the board: they span 0.04 to 0.69 em above the baseline.
+    const base = 1.775 - 0.365 * EM;
+    next(); // the letters: back to front when the sheet is flipped, so they read left to right once it is mirrored
+    const letter = house.flip ? (a) => SGX + word.width / 2 - a : (a) => SGX - word.width / 2 + a;
+    for (const st of word.strokes) on('y', SGY + 0.1, st.map(([a, b]) => [letter(a), base - b]));
+    words.push({ str: sign, size: EM * U, group });
+    next(); // tufts of grass
+    const tuft = (x, y) => {
+      const [gx, gy] = iso([x, y, -0.8]), d = front(x, y, -0.8) + 0.1;
+      for (const [dx, tx, ty] of [[-0.08, -0.14, -0.18], [0, 0, -0.24], [0.08, 0.15, -0.17]]) flat([[gx + dx, gy], [gx + dx + tx, gy + ty]], d);
+    };
+    for (const [x, y] of [[4, D + 2.5], [9.5, D + 6], [13, D + 3.2], [18.5, D + 8.5], [21, D + 4], [28.5, D + 10.2], [36, D + 6.5],
+      [37.5, D + 3]]) tuft(x, y);
+
+    if (has('dog')) {
+      next(); // a kennel on the lawn, its door to the street, and the dog sitting in front of it
+      const [kx0, kx1, ky0, ky1, KZ] = [8.4, 10.6, D + 5.6, D + 7.4, -0.8], km = (kx0 + kx1) / 2;
+      B(kx0, ky0, KZ, kx1, ky1, KZ + 1.5);
+      P('y', [[kx0 - 0.15, KZ + 1.5], [kx1 + 0.15, KZ + 1.5], [km, KZ + 2.35]], ky0 - 0.15, ky1 + 0.15); // roof
+      on('y', ky1, [[km - 0.4, KZ], ...arc2(km, KZ + 0.75, 0.4, Math.PI, 0, 12), [km + 0.4, KZ]]); // door
+      const ear = [[-0.2, -1.17], [-0.38, -1.12], [-0.42, -0.9], [-0.33, -0.8], [-0.25, -0.92]], leg = [[-0.12, 0], [-0.12, -0.38]];
+      pet([km - 0.6, ky1 + 1.0, KZ], 1.5, [0, -0.42, 0.34, 0.42], [0, -1.0, 0.27], [
+        ear, mirror(ear), leg, mirror(leg),
+        arc2(-0.09, -1.07, 0.03, 0, 2 * Math.PI, 8), arc2(0.09, -1.07, 0.03, 0, 2 * Math.PI, 8), // eyes
+        ell2(0, -0.92, 0.1, 0.07, 0, 2 * Math.PI, 16), arc2(0, -0.95, 0.03, 0, 2 * Math.PI, 8), // snout and nose
+        [[-0.22, -0.8], [0, -0.76], [0.22, -0.8]], arc2(0, -0.7, 0.04, 0, 2 * Math.PI, 8), // collar and tag
+        [[0.31, -0.15], [0.5, -0.28], [0.56, -0.48]], // tail
+      ]);
+    }
+
+    if (has('fish')) {
+      // A round pond on the lawn, a lily pad on it, and a goldfish leaping out over the ripples where it jumped.
+      next();
+      const [PX, PY, PZ] = [33, D + 3.8, -0.8]; // as far right as the sheet allows, clear of the longest sign
+      for (const r of [2.2, 1.9]) on('z', PZ, arc2(PX, PY, r, 0, 2 * Math.PI, 48)); // the stone edge
+      on('z', PZ, [...arc2(PX - 0.9, PY + 0.7, 0.4, 0.5, 2 * Math.PI, 16), [PX - 0.9, PY + 0.7], arc2(PX - 0.9, PY + 0.7, 0.4, 0.5, 0.5, 1)[0]]); // lily pad
+      for (const r of [0.3, 0.55]) on('z', PZ, arc2(PX + 0.2, PY - 0.3, r, 0, 2 * Math.PI, 24)); // ripples
+      // The fish, side on, drawn flat on the screen: x along its body, nose to the right, turned to leap up and right.
+      const [sx, sy] = iso([PX + 0.2, PY - 0.3, PZ]), d = front(PX, PY, PZ) + 0.5, tilt = -0.5, k = 1.6;
+      const at = ([x, y]) => [sx + k * (x * Math.cos(tilt) - y * Math.sin(tilt)) + 0.9, sy + k * (x * Math.sin(tilt) + y * Math.cos(tilt)) - 0.9];
+      const body = ell2(0, 0, 0.45, 0.2, 0, 2 * Math.PI, 28);
+      for (const pts of [body, [[-0.42, -0.05], [-0.7, -0.24], [-0.62, 0], [-0.7, 0.24], [-0.42, 0.05]], // body and tail
+        [[-0.05, -0.19], [-0.17, -0.34], [0.12, -0.2]], [[0.2, -0.15], [0.15, 0], [0.2, 0.15]], // fin and gill
+        arc2(0.3, -0.05, 0.035, 0, 2 * Math.PI, 8)]) flat(pts.map(at), d); // eye
+      card(hull([...body, [-0.7, -0.24], [-0.7, 0.24]]).map((q) => unIso(at(q), d - 0.02)), { ink: false });
+      for (const [x, y] of [[-0.35, 0.25], [0.15, 0.35], [-0.6, 0.45]]) flat([[sx + x, sy + y - 0.25], [sx + 1.3 * x, sy + y - 0.45]], d); // splash
+    }
+
+    // ---- The right end wall, with half a side door: the pens reach it last ----
+    // Its pieces meet edge to edge and are joined, so their seams drop out, even where the two pens' parts meet.
+    const { y0: fy0, head: fh } = SIDE_DOOR;
+    const endWall = (pieces) => { for (const piece of pieces) P('x', piece, W, X, { join: true }); };
+    next(4); // up to the ceiling: half a side door, canopy and steps, the porch light, and grass by the steps
+    endWall([
+      [[-T, -0.8], [fy0, -0.8], [fy0, 0], [-T, 0]], [[fy0, -0.8], [D, -0.8], [D, 0], [fy0, 0]],
+      [[-T, 0], [fy0, 0], [fy0, fh], [-T, fh]],
+      [[-T, fh], [fy0, fh], [fy0, G], [-T, G]], [[fy0, fh], [D, fh], [D, G], [fy0, G]],
+    ]);
+    hatch(W, X, -0.8, 0);
+    hatch(W, X, fh, G);
+    B(X - 0.15, fy0, 0, X, D, fh); // the door, shut, flush with the wall
+    on('x', X, rect2(fy0, 0, D, fh));
+    on('x', X, [[D, 3.7], [fy0 + 0.25, 3.7], [fy0 + 0.25, 6.25], [D, 6.25]]);
+    on('x', X, [[D, 0.45], [fy0 + 0.25, 0.45], [fy0 + 0.25, 3.3], [D, 3.3]]);
+    on('x', X + 0.02, arc2(fy0 + 0.13, 3.5, 0.08, 0, 2 * Math.PI, 12));
+    B(X, fy0 - 0.4, fh + 0.3, X + 0.9, D, fh + 0.55); // canopy
+    B(X, fy0 - 0.75, 5.3, X + 0.25, fy0 - 0.45, 5.9); // porch light
+    B(X, fy0 - 0.3, -0.4, X + 1.0, D, 0); // steps
+    B(X, fy0 - 0.3, -0.8, X + 1.8, D, -0.4);
+    hatch(X, X + 1.0, -0.4, 0);
+    hatch(X, X + 1.8, -0.8, -0.4);
+    tuft(X + 2.6, D - 1.5);
+    tuft(X + 1.0, 8.4);
+
+    // An end-wall window from z0 to z1, in the player's style, between the EV charger and the porch light.
+    function endWindow(z0, z1) {
+      tag = 'window';
+      next();
+      const [y0, y1] = [7.9, 10.3], ym = (y0 + y1) / 2, zm = (z0 + z1) / 2, r = (y1 - y0) / 2, w = house.windows;
+      if (w === 'round') { // a porthole with a cross of glazing bars
+        for (const rr of [r, r - 0.15]) on('x', X, arc2(ym, zm, rr, 0, 2 * Math.PI, 40));
+        on('x', X, [[ym, zm - r + 0.15], [ym, zm + r - 0.15]]);
+        on('x', X, [[y0 + 0.15, zm], [y1 - 0.15, zm]]);
+      } else if (w === 'arched') { // a round top over a fanlight
+        const zc = z1 - r;
+        for (const d of [0, 0.15]) on('x', X, [[y0 + d, zc], [y0 + d, z0 + d], [y1 - d, z0 + d], [y1 - d, zc], ...arc2(ym, zc, r - d, 0, Math.PI, 24)]);
+        on('x', X, [[ym, z0 + 0.15], [ym, z1 - 0.15]]);
+        on('x', X, [[y0 + 0.15, zc], [y1 - 0.15, zc]]);
+        for (const a of [Math.PI / 4, (3 * Math.PI) / 4]) on('x', X, [[ym, zc], [ym + (r - 0.15) * Math.cos(a), zc + (r - 0.15) * Math.sin(a)]]);
+      } else { // four panes, and shutters either side if the player picked them
+        on('x', X, rect2(y0, z0, y1, z1));
+        on('x', X, rect2(y0 + 0.15, z0 + 0.15, y1 - 0.15, z1 - 0.15));
+        on('x', X, [[ym, z0 + 0.15], [ym, z1 - 0.15]]);
+        on('x', X, [[y0 + 0.15, zm], [y1 - 0.15, zm]]);
+        if (w === 'shutters') {
+          for (const [a, b] of [[y0 - 0.7, y0 - 0.1], [y1 + 0.1, y1 + 0.7]]) {
+            B(X, a, z0, X + 0.08, b, z1);
+            for (let z = z0 + 0.3; z < z1 - 0.1; z += 0.3) on('x', X + 0.08, [[a + 0.08, z], [b - 0.08, z]]); // louvres
+          }
+        }
+      }
+      if (w !== 'round') B(X, y0 - 0.15, z0 - 0.2, X + 0.35, y1 + 0.15, z0); // sill
+      tag = undefined;
+    }
+    endWindow(3.0, 6.2); // on the ground floor, by the door
+
+    // ---- What stands outside, by the end wall: each one only if the player picked it ----
+    if (has('heat pump')) {
+      next(); // a heat pump on a concrete pad by the end wall, its pipes in a cover up the wall
+      const [hx, hy, HS, HZ, HT] = [X + 0.6, 3.2, 2.8, -0.55, 2.5]; // its back corner, side, foot and top
+      B(X, hy - 0.4, -0.8, hx + HS + 0.4, hy + HS + 0.4, HZ); // pad
+      B(hx, hy, HZ, hx + HS, hy + HS, HT - 0.2);
+      B(hx - 0.05, hy - 0.05, HT - 0.2, hx + HS + 0.05, hy + HS + 0.05, HT); // lid
+      on('x', hx + HS, rect2(hy + 0.25, HZ + 0.25, hy + HS - 0.25, HT - 0.4)); // the grille on the two sides we see
+      on('y', hy + HS, rect2(hx + 0.25, HZ + 0.25, hx + HS - 0.25, HT - 0.4));
+      for (let z = HZ + 0.45; z < HT - 0.45; z += 0.2) {
+        on('x', hx + HS, [[hy + 0.25, z], [hy + HS - 0.25, z]]);
+        on('y', hy + HS, [[hx + 0.25, z], [hx + HS - 0.25, z]]);
+      }
+      const HC = [hx + HS / 2, hy + HS / 2];
+      for (const r of [1.0, 0.85, 0.15]) on('z', HT, arc2(...HC, r, 0, 2 * Math.PI, 32)); // fan guard on top
+      B(X, hy + HS - 0.7, HZ + 0.6, hx, hy + HS - 0.4, HZ + 0.9); // pipes from its back to the wall
+      B(X, hy + HS - 0.7, HZ + 0.6, X + 0.3, hy + HS - 0.4, 5.0); // their cover, up the wall
+    }
+
+    if (has('rain barrel')) {
+      // A rain barrel at the back corner, under a downpipe from the eave. It stays inside the roof's overhang on the
+      // screen, so the sheet does not grow.
+      next();
+      const [rx, ry, RZ] = [X + 0.7, -0.3, -0.8]; // its middle and its foot
+      turned(rx, ry, RZ, [[0, 0.6, true], [0.25, 0.66, true], [1.5, 0.7], [2.75, 0.66, true], [3.0, 0.6]]); // hoops
+      B(X + 0.3, -1.0, RZ + 2.9, X + 0.6, -0.7, under(-1.0) - 0.15); // downpipe, up to the eave
+      L([[rx + 0.45, ry + 0.45, RZ + 0.5], [rx + 0.68, ry + 0.68, RZ + 0.5], [rx + 0.68, ry + 0.68, RZ + 0.35]]); // tap
+    }
+
+    if (has('EV charger')) {
+      next(); // an EV charger on the wall, a lightning bolt on it, its cable hanging in a loop to the plug
+      B(X, 6.0, 3.2, X + 0.3, 7.1, 4.6);
+      on('x', X + 0.3, [[6.45, 4.4], [6.7, 3.95], [6.45, 3.95], [6.7, 3.4]]);
+      L([[X + 0.2, 6.25, 3.2], [X + 0.35, 6.3, 2.2], [X + 0.4, 6.6, 1.7], [X + 0.4, 6.95, 1.9], [X + 0.35, 7.05, 2.9], [X + 0.3, 6.95, 3.5]]);
+    }
+
+    if (has('delivery box')) {
+      next(); // a delivery box by the door, under the window: a flap on its front, a handle on its lid
+      B(X, 9.8, -0.8, X + 1.4, 11.4, 1.3);
+      B(X, 9.75, 1.3, X + 1.5, 11.45, 1.45);
+      on('x', X + 1.4, rect2(10.0, 0.4, 11.2, 1.0));
+      on('x', X + 1.4, [[10.45, 0.8], [10.75, 0.8]]);
+      on('z', 1.45, [[X + 0.5, 10.4], [X + 0.5, 10.8]]);
+    }
+
+    if (has('cat')) {
+      next(); // a cat sitting on the canopy over the door
+      const ear = [[-0.17, -0.92], [-0.15, -1.13], [-0.04, -1.01]], whisker = [[-0.06, -0.77], [-0.28, -0.8]], leg = [[-0.08, 0], [-0.08, -0.3]];
+      pet([X + 0.45, D - 0.6, fh + 0.55], 1.1, [0, -0.33, 0.27, 0.33], [0, -0.82, 0.2], [
+        ear, mirror(ear), whisker, mirror(whisker), [[-0.06, -0.75], [-0.27, -0.71]], [[0.06, -0.75], [0.27, -0.71]], leg, mirror(leg),
+        arc2(-0.075, -0.85, 0.025, 0, 2 * Math.PI, 8), arc2(0.075, -0.85, 0.025, 0, 2 * Math.PI, 8), // eyes
+        [[-0.04, -0.76], [0, -0.74], [0.04, -0.76]], // nose
+        [[0.24, -0.08], [0.42, -0.04], [0.52, -0.18], [0.47, -0.36], [0.38, -0.42]], // tail
+      ]);
+    }
+
+    next(7); // the wall above, up to the roof, and the end of the roof over the upstairs
+    endWall([roof.upTo(-T, fy0, G), roof.upTo(fy0, D, G)]);
+    slab(EAVE, back(A1), W, X + 0.8);
+    hatch(W, X, G, RIDGE);
+
+    endWindow(12.6, 15.4); // upstairs, over the one by the door
+
+    next(8); // the end of the roof over the attic, and the round attic window
+    slab(back(A1), D, W, X + 0.8);
+    hatch(W, X + 0.8, RIDGE, RIDGE + 1);
+    on('x', X, arc2(D, 23.2, 1.1, Math.PI / 2, 1.5 * Math.PI, 20));
+    on('x', X, arc2(D, 23.2, 0.88, Math.PI / 2, 1.5 * Math.PI, 18));
+    on('x', X, [[D - 0.88, 23.2], [D, 23.2]]);
+
+    // ---- Then the pens fill in the house, room by room: each slot's shell, its glass wall on the right, its kit ----
+    SLOTS.forEach((s, i) => {
+      const up = s.z > 0, first = i === 0 || i === 4, last = i === 3 || i === 6, x0 = first ? -T : s.x0;
+      next(i + 1);
+      if (up) {
+        upstairsFloor(x0, s.x1);
+        B(s.x0, -T, F2, s.x1, 0, K, { join: true }); // back wall
+        slab(EAVE, back(A1), first ? -T - 0.8 : s.x0, s.x1); // the roof over this room; the attic has the rest
+        if (first) { P('x', roof.upTo(-T, D, F2), -T, 0); hatch(-T, 0, F2, RIDGE); } // left end wall, up to the ridge
+      } else {
+        room(x0, s.x1);
+        if (first) { B(-T, -T, 0, 0, D, G); hatch(-T, 0, 0, G); } // left end wall
+      }
+      const bends = [...roof.bends(0, D).filter(([, z]) => z < A0).map(([y]) => y), back(A0)].filter((y) => y > 0.15 && y < D - 0.15);
+      if (!last) { next(); glass(s.x1, s.z, (y) => ceiling(i, y, roof), up ? bends.sort((a, b) => a - b) : []); }
+      [origin, kit] = [[s.x0, 0, s.z], house.rooms[i]];
+      KITS[kit]((y) => ceiling(i, y, roof) - s.z);
+      [origin, kit] = [[0, 0, 0], undefined];
+    });
+
+    // ---- The attic, up under the ridge ----
+    next(8);
+    P('x', ATTIC_FLOOR, 0, W, { join: true }); // attic floor
+    slab(back(A1), D, -T - 0.8, W); // the roof runs on past the far wall
+    hatch(0, W, A0, A1);
+    hatch(-T - 0.8, W, RIDGE, RIDGE + 1);
+    for (let x = 3; x < W - 1; x += 4) L([[x, back(A1), A1], ...roof.bends(back(A1), D).map(([y, z]) => [x, y, z]), [x, D, RIDGE]]); // rafters
+
+    tag = 'bulb';
+    next(); // a bare bulb on a cord from the roof
+    const BY = 4.5 + WIDER, BZ = under(BY) - 2.1; // where it hangs, and the bulb's centre
+    L([[19, BY, under(BY)], [19, BY, BZ + 0.35]]);
+    const [lx, ly] = iso([19, BY, BZ]), ld = front(19, BY, BZ) + 0.3;
+    flat(arc2(lx, ly, 0.26, 0, 2 * Math.PI, 20), ld);
+    flat(rect2(lx - 0.1, ly - 0.38, lx + 0.1, ly - 0.24), ld);
+
+    tag = 'bird';
+    next(); // easter egg: a bird in a sweater, after the Doodle Club birds
+    move(0, WIDER - 1.5);
+    const [fx, fy] = iso([13.5, 5.3, A1]), fd = front(13.5, 5.3, A1) + 0.8;
+    const bird = (pts) => flat(pts.map(([x, y]) => [fx + 1.25 * x, fy + 1.25 * y]), fd);
+    const BODY = [0, -0.68, 0.55, 0.68], HEAD = [0, -1.5, 0.4];
+    const inBody = ([x, y]) => ((x - BODY[0]) / BODY[2]) ** 2 + ((y - BODY[1]) / BODY[3]) ** 2 < 1;
+    const halfW = (y) => BODY[2] * Math.sqrt(Math.max(0, 1 - ((y - BODY[1]) / BODY[3]) ** 2));
+    bird(arc2(HEAD[0], HEAD[1], HEAD[2], Math.PI / 2, 2.5 * Math.PI, 40).filter((p) => !inBody(p)));
+    bird(ell2(...BODY, -Math.PI / 2, 1.5 * Math.PI, 48).filter((p) => Math.hypot(p[0] - HEAD[0], p[1] - HEAD[1]) >= HEAD[2]));
+    for (const y of [-1.18, -1.06, -0.84, -0.58, -0.32, -0.12]) bird([[-halfW(y), y], [halfW(y), y]]); // collar, stripes, hem
+    for (let x = -0.3; x <= 0.31; x += 0.1) bird([[x, -1.18], [x, -1.06]]);
+    for (let x = -0.4; x <= 0.41; x += 0.1) bird([[x, -0.12], [x, -0.68 + BODY[3] * Math.sqrt(1 - (x / BODY[2]) ** 2)]]);
+    for (const s of [-1, 1]) {
+      bird([[0.45 * s, -1.0], [0.66 * s, -0.78], [0.72 * s, -0.5], [0.6 * s, -0.38]]); // sleeves
+      bird([[0.7 * s, -0.47], [0.56 * s, -0.42]]);
+      bird([[0.18 * s, -0.02], [0.28 * s, 0.07]]); // feet
+      bird([[0.18 * s, -0.02], [0.15 * s, 0.09]]);
+    }
+    bird(arc2(0.14, -1.58, 0.05, 0, 2 * Math.PI, 8)); // eye
+    const birdShape = hull([...arc2(...HEAD, 0, 2 * Math.PI, 16), ...ell2(...BODY, 0, 2 * Math.PI, 24)]);
+    card(birdShape.map(([x, y]) => unIso([fx + 1.25 * x, fy + 1.25 * y], fd - 0.02)), { ink: false }); // lines behind it stay hidden
+    bird([[0.36, -1.6], [0.56, -1.52], [0.37, -1.44]]); // beak
+
+    tag = 'cow box';
+    next(); // easter egg: the Blue Bovine Box, a pixel cow peeking out of an open box
+    move(0, WIDER - 1.5);
+    const [bx0, by0, bz0, bx1, by1, bz1] = [23.2, 4.6, A1, 26.0, 6.3, A1 + 1.6]; // forward, so the cow's ears clear the roof
+    const cnr = [[bx0, by0], [bx1, by0], [bx1, by1], [bx0, by1]];
+    const bot = cnr.map(([x, y]) => [x, y, bz0]), rim = cnr.map(([x, y]) => [x, y, bz1]);
+    faces.push(...solid([bot, ...cnr.map((_, i) => { const j = (i + 1) % 4; return [bot[i], bot[j], rim[j], rim[i]]; })], meta()));
+    L([rim[3], rim[0], rim[1]]); // the far rim, seen over the open top
+    L([rim[0], bot[0]]); // the far inside corner
+    card([rim[0], rim[3], [bx0 - 0.6, by1, bz1 + 0.55], [bx0 - 0.6, by0, bz1 + 0.55]]); // flaps
+    card([rim[1], rim[2], [bx1 + 0.45, by1, bz1 - 0.5], [bx1 + 0.45, by0, bz1 - 0.5]]); // folded down, clear of the cow
+    card([rim[3], rim[2], [bx1, by1 + 0.18, bz1 - 0.55], [bx0, by1 + 0.18, bz1 - 0.55]]);
+    const cm = [(bx0 + bx1) / 2, (by0 + by1) / 2, bz1], [cx, cy] = iso(cm), PX = 0.28;
+    const cell = ([u, v]) => [cx + (u - 5) * PX, cy + 1.2 + (v - 9) * PX];
+    const cow = (pts) => flat(pts.map(cell), front(...cm));
+    card([[2, 1], [8, 1], [8, 9], [2, 9]].map((q) => unIso(cell(q), front(...cm) - 0.02)), { ink: false }); // the far rim stays behind its face
+    cow([[2, 0], [3, 0], [3, 1], [7, 1], [7, 0], [8, 0], [8, 2], [10, 2], [10, 3], [8, 3], [8, 6], [9, 6], [9, 8], [8, 8], [8, 9],
+      [2, 9], [2, 8], [1, 8], [1, 6], [2, 6], [2, 3], [0, 3], [0, 2], [2, 2], [2, 0]]);
+    cow([[2, 6], [8, 6]]); // muzzle
+    for (const [u, v] of [[3, 4], [6, 4], [3, 7], [6, 7]]) cow(rect2(u, v, u + 1, v + 1)); // eyes, nostrils
+
+    // ---- The attic things a player picks ----
+    // The roof comes down to the attic floor at the back, so each thing stands out toward the open front. Left to right:
+    // the tree, the rocking horse and the trunk before the bird; the dress form between the bird and the bulb; the boxes
+    // past the cow box. The fairy lights hang along the front, over all of them.
+    const front2 = (p) => [p[0] + 0.64 * Math.cos(Math.PI / 4), p[1] + 0.64 * Math.sin(Math.PI / 4)]; // toward us, 0.64 ft
+    if (has('Christmas tree')) {
+      tag = 'Christmas tree';
+      next(); // a Christmas tree in a pot: three tiers, baubles and a star
+      const [ex, ey] = [3.0, 11.2];
+      turned(ex, ey, A1, [[0, 0.35, true], [0.5, 0.42, true], [0.5, 0.12], [0.7, 0.12], [0.75, 1.0, true], [1.4, 0.4], [1.45, 0.8, true],
+        [2.05, 0.3], [2.1, 0.6, true], [2.75, 0.04]]);
+      for (const [z, r, a] of [[1.0, 0.82, 0.3], [1.0, 0.82, 1.3], [1.7, 0.6, 0.8], [2.35, 0.42, 0.4]]) { // baubles on the front of the tiers
+        const p = [ex + r * Math.cos(a), ey + r * Math.sin(a), A1 + z], [qx, qy] = iso(p);
+        flat(arc2(qx, qy, 0.07, 0, 2 * Math.PI, 8), front(...p) + 0.2);
+      }
+      const [sx, sy] = iso([ex, ey, A1 + 2.75]), sd = front(ex, ey, A1 + 2.75) + 1.2;
+      flat(Array.from({ length: 11 }, (_, k) => {
+        const a = -Math.PI / 2 + (k * Math.PI) / 5, r = k % 2 ? 0.1 : 0.24;
+        return [sx + r * Math.cos(a), sy - 0.2 + r * Math.sin(a)];
+      }), sd); // the star
+    }
+
+    if (has('rocking horse')) {
+      tag = 'rocking horse';
+      next(); // a rocking horse, side on, doodled flat like the pets: x along it, nose to the right, y up the screen negative
+      const [hx0, hy0] = iso([7.0, 11.5, A1]), hd = front(7.0, 11.5, A1) + 0.5, at = ([x, y]) => [hx0 + x, hy0 + y];
+      const outer = arc2(0, -3, 3, Math.PI / 2 - 0.4, Math.PI / 2 + 0.4, 16), inner = arc2(0, -3, 2.85, Math.PI / 2 + 0.4, Math.PI / 2 - 0.4, 16);
+      const body = ell2(0, -1.25, 0.72, 0.3, 0, 2 * Math.PI, 28), head = [[0.78, -2.0], [0.92, -2.17], [1.35, -1.86], [1.32, -1.72], [0.98, -1.76]];
+      for (const pts of [[...outer, ...inner, outer[0]], body, head, // rocker, body, head
+        [[0.4, -1.0], [0.72, -0.3]], [[0.55, -1.06], [0.9, -0.33]], [[-0.4, -1.0], [-0.72, -0.3]], [[-0.55, -1.06], [-0.9, -0.33]], // legs
+        [[0.5, -1.47], [0.78, -2.0]], [[0.68, -1.32], [0.98, -1.76]], // neck
+        [[0.78, -2.0], [0.62, -1.92], [0.7, -1.82], [0.55, -1.74], [0.63, -1.64], [0.5, -1.47]], // mane
+        [[0.86, -2.12], [0.84, -2.33], [0.97, -2.18]], arc2(1.02, -1.94, 0.035, 0, 2 * Math.PI, 8), // ear and eye
+        [[-0.7, -1.32], [-0.98, -1.18], [-1.04, -0.88]], [[-0.7, -1.27], [-0.92, -1.02]], // tail
+        [[-0.22, -1.53], [-0.17, -1.43], [0.2, -1.43], [0.26, -1.53]], // saddle
+      ]) flat(pts.map(at), hd);
+      card(hull([...outer, ...body, ...head]).map((q) => unIso(at(q), hd - 0.02)), { ink: false });
+    }
+
+    if (has('trunk')) {
+      tag = 'trunk';
+      next(); // an old travel trunk: a lid, two straps down the front and over the lid, a latch and a handle
+      const [t0, t1, u0, u1, TH, LH] = [10.0, 12.4, 10.9, 12.3, 1.4, 0.35]; // its ends, back and front, and the box's and lid's height
+      B(t0, u0, A1, t1, u1, A1 + TH);
+      B(t0 - 0.05, u0 - 0.05, A1 + TH, t1 + 0.05, u1 + 0.05, A1 + TH + LH);
+      for (const x of [t0 + 0.45, t0 + 0.6, t1 - 0.6, t1 - 0.45]) {
+        L([[x, u1, A1], [x, u1, A1 + TH], [x, u1 + 0.05, A1 + TH], [x, u1 + 0.05, A1 + TH + LH], [x, u0 - 0.05, A1 + TH + LH]]);
+      }
+      on('y', u1 + 0.05, rect2((t0 + t1) / 2 - 0.12, A1 + TH + 0.05, (t0 + t1) / 2 + 0.12, A1 + TH + 0.25));
+      on('x', t1, rect2(11.35, A1 + 0.85, 11.85, A1 + 1.0));
+    }
+
+    if (has('dress form')) {
+      tag = 'dress form';
+      next(); // a dress form on its stand, its waist and bust marked
+      turned(17.2, 11.8, A1, [[0, 0.5, true], [0.06, 0.5], [0.06, 0.05], [2.1, 0.05], [2.1, 0.36], [2.5, 0.46, true], [3.0, 0.32, true],
+        [3.5, 0.44, true], [3.85, 0.36], [4.0, 0.11], [4.15, 0.11], [4.2, 0.05]]);
+    }
+
+    if (has('boxes')) {
+      tag = 'boxes';
+      next(); // moving boxes, two stacked and one beside them, taped shut
+      for (const [x0, y0, z0, x1, y1, z1] of [[28.6, 9.4, 0, 30.6, 11.0, 1.4], [28.9, 9.7, 1.4, 30.3, 10.8, 2.5], [30.9, 10.2, 0, 32.1, 11.4, 1.0]]) {
+        B(x0, y0, A1 + z0, x1, y1, A1 + z1);
+        const xm = (x0 + x1) / 2;
+        L([[xm, y0, A1 + z1], [xm, y1, A1 + z1], [xm, y1, A1 + z1 - 0.3]]); // tape over the top and down the front
+      }
+    }
+
+    if (has('fairy lights')) {
+      tag = 'fairy lights';
+      next(); // fairy lights strung from rafter to rafter, near the open front, a bulb every foot
+      const LY = 12.6, LZ = under(LY) - 0.1, SAG = 0.5, wire = (x) => { const u = ((x - 3) % 4) / 4; return LZ - SAG * 4 * u * (1 - u); };
+      L(Array.from({ length: 129 }, (_, k) => [3 + k * 0.25, LY, wire(3 + k * 0.25)]));
+      for (let x = 3.5; x < 35; x += 1) {
+        const p = [x, LY, wire(x) - 0.17], [qx, qy] = iso(p);
+        L([[x, LY, wire(x)], [x, LY, wire(x) - 0.1]]);
+        flat(arc2(qx, qy, 0.07, 0, 2 * Math.PI, 8), front(...p) + 0.1);
+      }
+    }
+    tag = undefined;
+
+    // Move each group to where move() and its room put it.
+    for (const o of [...faces, ...items]) {
+      const m = moved[o.group];
+      if (!m || !(m[0] || m[1] || m[2])) continue;
+      const to = (p) => [p[0] + m[0], p[1] + m[1], p[2] + m[2]];
+      if (o.n) Object.assign(o, { pts: o.pts.map(to), k: dot(o.n, to(o.pts[0])) });
+      else o.pts = o.pts.map(to);
+    }
+    return { faces, items, words };
+  }
+
+  // The whole sheet: hidden lines removed, scaled onto the paper, and the pens' order set.
+  function drawing(font, house) {
+    const sc = scene(font, house);
+    const raw = hide(sc.faces, sc.items);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const s of raw) for (const [x, y] of s.pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    // Flipped, the sheet is mirrored left to right: the door end comes first.
+    const tx = ([x, y]) => [(house.flip ? x1 - x : x - x0) * U + M, (y - y0) * U + M];
+    const w = (x1 - x0) * U + 2 * M, h = (y1 - y0) * U + 2 * M;
+    const all = raw.map((s) => ({ ...s, pts: s.pts.map(tx) }));
+
+    // Pen order: each pen sweeps its whole floor in one pass, from the far left end to the side door.
+    // Lines are cut into bands WAVE wide; the pen draws only within one band of the leftmost part
+    // still undrawn, and inside that band always takes the nearest loose end next.
+    const printed = all.filter((s) => s.stage === 0);
+    const pens = PENS.map(({ name, stages, start }) => {
+      const strokes = [];
+      let pos = tx(iso(house.flip ? [W + T, start[1], start[2]] : start)); // the end the pens start from
+      const pieces = all.filter((v) => stages.includes(v.stage))
+        .flatMap((s) => chop(s.pts, WAVE).map((pts) => ({ stage: s.stage, pts, key: -Math.min(...pts.map((q) => q[0])) })))
+        .sort((a, b) => b.key - a.key);
+      const pool = [];
+      let i = 0;
+      while (i < pieces.length || pool.length) {
+        const top = pool.length ? Math.max(...pool.map((s) => s.key)) : pieces[i].key;
+        while (i < pieces.length && pieces[i].key >= top - WAVE) pool.push(pieces[i++]);
+        let best = 0, bd = Infinity, rev = false;
+        pool.forEach((s, j) => {
+          const da = Math.hypot(s.pts[0][0] - pos[0], s.pts[0][1] - pos[1]);
+          const db = Math.hypot(s.pts[s.pts.length - 1][0] - pos[0], s.pts[s.pts.length - 1][1] - pos[1]);
+          if (da < bd) [bd, best, rev] = [da, j, false];
+          if (db < bd) [bd, best, rev] = [db, j, true];
+        });
+        const s = pool.splice(best, 1)[0], pts = rev ? s.pts.slice().reverse() : s.pts;
+        strokes.push({ stage: s.stage, pts });
+        pos = pts[pts.length - 1];
+      }
+      return { name, stages, strokes };
+    });
+    const strokes = [...printed, ...pens.flatMap((p) => p.strokes)];
+    return { w, h, printed, strokes, pens, words: sc.words, at: (p) => tx(iso(p)) };
+  }
+
+  // Pen timing: the pen speed in sheet units a second before it is tuned, the beat on the lawn before the pens start, and
+  // the time the whole house takes.
+  const PEN = { draw: 7600, lift: 0.003, fast: 4 }, WAIT = 0.8, TOTAL = 7;
+
+  // Plan both pens. Their speeds are set so both reach the far end together, TOTAL seconds in, however much the rooms hold.
+  function timeline(sh) {
+    const opts = { ...PEN, travel: sh.w * 20, ramp: sh.w * 0.025 };
+    const planFor = (pen, f) => plan(pen.strokes.map((s) => s.pts),
+      { ...opts, draw: opts.draw * f, travel: opts.travel * f, home: pen.strokes[0].pts[0], pauses: { 0: WAIT } });
+    // At speed f a plan takes WAIT + A / f + L: drawing and travel A go with the pen, the lifts L do not. Two plans give
+    // A and L, and so the speed that takes TOTAL.
+    const speed = sh.pens.map((pen) => {
+      const t1 = planFor(pen, 1).total, t2 = planFor(pen, 2).total, A = 2 * (t1 - t2), L = t1 - WAIT - A;
+      return A / (TOTAL - WAIT - L);
+    });
+    const plans = sh.pens.map((pen, k) => planFor(pen, speed[k]));
+    return { plans, total: Math.max(...plans.map((p) => p.total)) };
+  }
+
+  // The finished drawing as a picture to keep: the paper, its grid, and every stroke, `scale` px per sheet unit.
+  function svg(sh, scale, house = {}) {
+    const d = (s) => 'M' + s.pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L'), { paper, grid, ink } = look(house);
+    const lines = grid ? `<defs><pattern id="grid" width="${GRID}" height="${GRID}" patternUnits="userSpaceOnUse">` +
+      `<path d="M${GRID} 0H0V${GRID}" fill="none" stroke="${grid}" stroke-width="0.6"/></pattern></defs>` +
+      '<rect width="100%" height="100%" fill="url(#grid)"/>' : '';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sh.w.toFixed(1)} ${sh.h.toFixed(1)}" ` +
+      `width="${Math.round(sh.w * scale)}" height="${Math.round(sh.h * scale)}"><rect width="100%" height="100%" fill="${paper}"/>` + lines +
+      `<g fill="none" stroke="${ink}" stroke-opacity="0.88" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">` +
+      sh.strokes.map((s) => `<path d="${d(s)}"/>`).join('') + '</g></svg>';
+  }
+
+  const api = { BED, STAGES, ROOMS, SLOTS, KIT, WAVE, HOUSE: { W, D, GABLE, DOOR: SIDE_DOOR, ceiling }, iso, box, prism, hide, text,
+    plan, at, scene, drawing, timeline, svg, cleanName, shuffle, encode, decode, OUTSIDE, PETS, ATTIC, EXTRAS, randomExtras,
+    ROOF_STYLES, WINDOW_STYLES, roofOf, randomOf, INKS, PAPERS, GRID, look };
+  if (typeof module !== 'undefined') module.exports = api; else root.House = api;
+})(this);
+</script>
+<script>
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('drawing');
+  const nameInput = document.getElementById('name');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const B = House.BED;
+  let house = House.decode(location.hash, PLOTLINE);
+  let sh, pens, total, t = 0, playing = false, last = 0, VW = 1, VH = 1;
+
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e);
+    return e;
+  };
+  const toD = (s) => 'M' + s.pts.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join('L');
+  const hide = (path) => { path.style.strokeDashoffset = path.len + 5; };
+
+  // A room picker per slot, laid out like the house: upstairs over the ground floor.
+  const selects = House.SLOTS.map((s, i) => {
+    const sel = document.createElement('select');
+    sel.setAttribute('aria-label', `${i < 4 ? 'Ground floor' : 'Upstairs'}, room ${i < 4 ? i + 1 : i - 3} from the left`);
+    document.getElementById(i < 4 ? 'ground' : 'upstairs').append(sel);
+    for (const r of House.ROOMS) sel.add(new Option(r, r));
+    sel.addEventListener('change', () => { house.rooms[i] = sel.value; build(true); });
+    return sel;
+  });
+
+  // The roof and the windows: one style each. A new roof redraws the house; new windows only the end wall.
+  const roofSel = document.getElementById('roof'), windowSel = document.getElementById('windows');
+  for (const r of House.ROOF_STYLES) roofSel.add(new Option(`${r} roof`, r));
+  for (const w of House.WINDOW_STYLES) windowSel.add(new Option(w === 'shutters' ? 'shutters' : `${w} windows`, w));
+  roofSel.addEventListener('change', () => { house.roof = roofSel.value; build(true); });
+
+  // The look: paper, ink, and the flip that puts the door end on the left. The pens start over only for the flip.
+  const paperSel = document.getElementById('paper'), inkSel = document.getElementById('ink'), flipBox = document.getElementById('flip');
+  for (const p of House.PAPERS) paperSel.add(new Option(p === 'white' || p === 'grid' ? `${p} paper` : p, p));
+  for (const k of House.INKS) inkSel.add(new Option(`${k} ink`, k));
+  paperSel.addEventListener('change', () => { house.paper = paperSel.value; build(false); });
+  inkSel.addEventListener('change', () => { house.ink = inkSel.value; build(false); });
+  flipBox.addEventListener('change', () => { house.flip = flipBox.checked; build(true); });
+  windowSel.addEventListener('change', () => { house.windows = windowSel.value; build(false); });
+
+  // A toggle for each thing outside and each pet, in its group.
+  const extras = House.EXTRAS.map((x) => {
+    const label = document.createElement('label'), box = document.createElement('input');
+    box.type = 'checkbox';
+    box.addEventListener('change', () => { house.extras = House.EXTRAS.filter((_, k) => extras[k].checked); build(false); });
+    label.append(box, x);
+    document.getElementById(House.PETS.includes(x) ? 'pets' : House.ATTIC.includes(x) ? 'attic' : 'outside').append(label);
+    return box;
+  });
+
+  // Draw the house afresh. The pens start over when the rooms change; a new name or a thing outside only adds to it.
+  function build(restart) {
+    sh = House.drawing(PLOTLINE, house);
+    history.replaceState(null, '', '#' + House.encode(house));
+    selects.forEach((sel, i) => { sel.value = house.rooms[i]; });
+    extras.forEach((box, k) => { box.checked = house.extras.includes(House.EXTRAS[k]); });
+    [roofSel.value, windowSel.value, paperSel.value, inkSel.value, flipBox.checked] = [house.roof, house.windows, house.paper, house.ink, house.flip];
+    inkSel.disabled = house.paper.startsWith('blueprint'); // a blueprint always takes white ink
+    if (document.activeElement !== nameInput) nameInput.value = house.name;
+    const floors = (a, b) => house.rooms.slice(a, b).join(', ');
+    const list = (xs) => xs.filter((x) => house.extras.includes(x)).join(', ') || 'none';
+    svg.setAttribute('aria-label', `A two-storey house with its front cut away, drawn ${house.paper.startsWith('blueprint') ? 'in white on a blueprint' : `in ${house.ink} ballpoint`}` +
+      `${house.flip ? ', its door end on the left' : ''}: a ${house.roof} roof, ${house.windows} windows. Upstairs: ${floors(4, 7)}. ` +
+      `Ground floor: ${floors(0, 4)}. Outside: ${list(House.OUTSIDE)}. Pets: ${list(House.PETS)}. Attic: ${list(House.ATTIC)}. The sign says ${sh.words[0].str}.`);
+
+    VW = sh.w + 2 * B;
+    VH = sh.h + 2 * B;
+    svg.setAttribute('viewBox', `${-B} ${-B} ${VW} ${VH}`);
+    svg.replaceChildren();
+    el('rect', { x: 3, y: 5, width: sh.w, height: sh.h, class: 'paper-shadow' }, svg);
+    el('rect', { x: 0, y: 0, width: sh.w, height: sh.h, class: 'paper' }, svg);
+    const look = House.look(house), G = House.GRID;
+    svg.style.setProperty('--paper', look.paper);
+    svg.style.setProperty('--ink', look.ink);
+    if (look.grid) {
+      const pattern = el('pattern', { id: 'grid', width: G, height: G, patternUnits: 'userSpaceOnUse' }, el('defs', {}, svg));
+      el('path', { d: `M${G} 0H0V${G}`, stroke: look.grid, class: 'grid' }, pattern);
+      el('rect', { width: sh.w, height: sh.h, fill: 'url(#grid)' }, svg);
+    }
+    const inkLayer = el('g', { class: 'ink' }, svg);
+    for (const s of sh.printed) el('path', { d: toD(s) }, inkLayer);
+    const tl = House.timeline(sh);
+    total = tl.total;
+    pens = sh.pens.map((pen, k) => {
+      const paths = pen.strokes.map((s) => {
+        const path = el('path', { d: toD(s) }, inkLayer);
+        let len = 0;
+        for (let j = 1; j < s.pts.length; j++) len += Math.hypot(s.pts[j][0] - s.pts[j - 1][0], s.pts[j][1] - s.pts[j - 1][1]);
+        path.len = len;
+        path.style.strokeDasharray = `${len} ${len + 10}`;
+        hide(path);
+        return path;
+      });
+      return { p: tl.plans[k], paths, done: 0 };
+    });
+    if (restart) t = 0;
+    if (reduce) t = total;
+    render();
+    play();
+  }
+
+  function render() {
+    for (const pen of pens) {
+      const s = House.at(pen.p, t), { paths } = pen;
+      if (s.i < pen.done) { paths.forEach(hide); pen.done = 0; }
+      for (; pen.done < s.i; pen.done++) paths[pen.done].style.strokeDashoffset = 0;
+      if (s.i < paths.length) {
+        const cur = paths[s.i];
+        if (s.z === 0) cur.style.strokeDashoffset = cur.len - s.drawn; else hide(cur);
+      }
+    }
+  }
+
+  function frame(now) {
+    if (!playing) return;
+    t = Math.min(t + Math.min((now - last) / 1000, 0.1), total);
+    last = now;
+    render();
+    if (t >= total) playing = false;
+    else requestAnimationFrame(frame);
+  }
+
+  function play() {
+    if (playing || t >= total) return;
+    playing = true;
+    last = performance.now();
+    requestAnimationFrame(frame);
+  }
+
+  nameInput.addEventListener('input', () => { house.name = House.cleanName(nameInput.value, PLOTLINE); build(false); });
+  document.getElementById('controls').addEventListener('submit', (e) => e.preventDefault());
+  document.getElementById('shuffle').addEventListener('click', () => { // a random house: everything but the name
+    house.rooms = House.shuffle();
+    house.extras = House.randomExtras();
+    house.roof = House.randomOf(House.ROOF_STYLES);
+    house.windows = House.randomOf(House.WINDOW_STYLES);
+    build(true);
+  });
+  document.getElementById('replay').addEventListener('click', () => {
+    t = 0;
+    render();
+    play();
+  });
+  addEventListener('hashchange', () => {
+    if (location.hash.slice(1) === House.encode(house)) return;
+    house = House.decode(location.hash, PLOTLINE);
+    build(true);
+  });
+
+  // Share: the link holds the house. The share sheet where there is one, else the link is copied.
+  const shareBtn = document.getElementById('share');
+  shareBtn.addEventListener('click', async () => {
+    const url = location.href;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'drawhaus', url }); } catch { /* closed without sharing */ }
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    shareBtn.textContent = 'Copied';
+    setTimeout(() => { shareBtn.textContent = 'Share'; }, 1500);
+  });
+
+  // Download: the finished drawing as a PNG, 2 px per sheet unit.
+  document.getElementById('download').addEventListener('click', () => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      [c.width, c.height] = [img.width, img.height];
+      c.getContext('2d').drawImage(img, 0, 0);
+      c.toBlob((blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `drawhaus${house.name ? '-' + house.name.replace(/[^\p{L}\p{N}]+/gu, '-') : ''}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      });
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(House.svg(sh, 2, house));
+  });
+
+  // A thin ballpoint line, about 1.15px on any screen.
+  new ResizeObserver(() => {
+    const r = svg.getBoundingClientRect();
+    if (r.width) svg.style.setProperty('--pen', (1.15 / Math.min(r.width / VW, r.height / VH)).toFixed(3));
+  }).observe(svg);
+  build(true);
+</script>
