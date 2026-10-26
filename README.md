@@ -2,6 +2,8 @@
 
 Build your own cutaway dollhouse, and a blue ballpoint pen draws it.
 
+![A two-storey cutaway dollhouse drawn in blue ballpoint: seven furnished rooms, an attic with a Christmas tree, a cat, a dog and a welcome sign that says drawhaus](docs/drawhaus.png)
+
 By Andrea Antal. The name is draw + haus, a pun on dollhouse.
 
 ## What a player can do
@@ -14,6 +16,8 @@ By Andrea Antal. The name is draw + haus, a pun on dollhouse.
 - Shuffle for a random house, share the link (the whole house is in the URL), or download a PNG.
 
 Every house takes 7 seconds to draw.
+
+![The drawhaus page: the Options receipt is open on the left, with rooms, style, look, outside, pets, attic and specs; the drawing is on the right](docs/options.png)
 
 ## Run it
 
